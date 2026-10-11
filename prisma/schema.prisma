@@ -27,6 +27,9 @@ model User {
   createdAt          DateTime  @default(now())
 
   business         Business?
+  notifications    Notification[]
+  payouts          Payout[]
+  reviews          Review[]
   clientOrders     Order[]   @relation("ClientOrders")
   measurementJobs  Order[]   @relation("MeasurerJobs")
   deliveryJobs     Order[]   @relation("RiderJobs")
@@ -48,8 +51,11 @@ model Business {
   registrationNumber String   // Business registration (ORC) or Ghana Card number
   verificationStatus String   @default("PENDING")
   rating             Float    @default(0)
+  reviewCount        Int      @default(0)
   createdAt          DateTime @default(now())
 
+  photos    BusinessPhoto[]
+  reviews   Review[]
   materials Material[]
   styles    BusinessStyle[]
   orders    Order[]
@@ -63,8 +69,9 @@ model Style {
   wearer      String  // WOMEN | MEN | UNISEX
   description String
   yardsNeeded Float   // Typical fabric needed
-  // Visual for the catalogue card (emoji until real photos are uploaded).
+  // Emoji shown when there is no photo.
   icon        String
+  imageUrl    String?
 
   businesses BusinessStyle[]
   orders     Order[]
@@ -93,6 +100,7 @@ model Material {
   color       String   // CSS colour used for the swatch
   pricePerYard Float
   yardsInStock Float
+  imageUrl    String?
   createdAt   DateTime @default(now())
 
   orders Order[]
@@ -141,6 +149,72 @@ model Order {
   deliveryFee    Float @default(0)
   total          Float @default(0)
 
+  // Payment: UNPAID | PAID. The client pays once the tailor accepts.
+  paymentStatus String    @default("UNPAID")
+  paymentRef    String?   @unique
+  paidAt        DateTime?
+
+  review        Review?
+  payouts       Payout[]
+  notifications Notification[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Portfolio photos a business shows on its public profile.
+model BusinessPhoto {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  url        String
+  caption    String   @default("")
+  createdAt  DateTime @default(now())
+}
+
+// A client's rating of a completed order.
+model Review {
+  id         String   @id @default(cuid())
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id])
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  clientId   String
+  client     User     @relation(fields: [clientId], references: [id])
+  rating     Int      // 1-5
+  comment    String   @default("")
+  createdAt  DateTime @default(now())
+}
+
+// In-app notification (also sent by SMS when an SMS provider is configured).
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  message   String
+  link      String   @default("")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+// Money owed to a tailor, measurement agent or rider for a completed order.
+// Status: PENDING | PAID (admin marks paid after sending Mobile Money).
+model Payout {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  orderId   String
+  order     Order     @relation(fields: [orderId], references: [id])
+  role      String    // BUSINESS | MEASURER | RIDER
+  amount    Float
+  status    String    @default("PENDING")
+  reference String?   // Mobile Money transaction ID when paid
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([orderId, userId])
 }

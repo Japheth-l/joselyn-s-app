@@ -18,6 +18,20 @@ export function swatchStyle(design: string, color: string): CSSProperties {
   }
 }
 
-export function Swatch({ design, color, className = "" }: { design: string; color: string; className?: string }) {
+/** The fabric's photo if the shop uploaded one, otherwise a pattern preview. */
+export function Swatch({ design, color, imageUrl, className = "" }: { design: string; color: string; imageUrl?: string | null; className?: string }) {
+  if (imageUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={imageUrl} alt="" className={`rounded-lg border border-stone-200 object-cover ${className}`} />;
+  }
   return <div aria-hidden className={`rounded-lg border border-stone-200 ${className}`} style={swatchStyle(design, color)} />;
+}
+
+/** A style's photo if one was uploaded, otherwise its emoji. */
+export function StyleImage({ icon, imageUrl, className = "" }: { icon: string; imageUrl?: string | null; className?: string }) {
+  if (imageUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={imageUrl} alt="" className={`rounded-lg object-cover ${className}`} />;
+  }
+  return <span aria-hidden className={`grid place-items-center rounded-lg bg-stone-100 text-4xl ${className}`}>{icon}</span>;
 }

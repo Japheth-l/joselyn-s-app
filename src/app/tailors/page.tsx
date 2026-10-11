@@ -21,7 +21,7 @@ export default async function TailorsPage() {
       <NearbyTailors
         home={home}
         tailors={businesses.map((b) => ({
-          id: b.id, name: b.name, kind: b.kind, address: b.address, city: b.city, phone: b.phone, lat: b.lat, lng: b.lng, rating: b.rating,
+          id: b.id, name: b.name, kind: b.kind, address: b.address, city: b.city, phone: b.phone, lat: b.lat, lng: b.lng, rating: b.rating, reviewCount: b.reviewCount,
           styles: b.styles.map((s) => s.style.name),
           fromPrice: Math.min(...b.styles.map((s) => s.price)),
           homeKm: distanceKm(home.lat, home.lng, b.lat, b.lng),

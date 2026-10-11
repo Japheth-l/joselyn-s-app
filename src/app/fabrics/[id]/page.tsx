@@ -14,7 +14,7 @@ export default async function FabricPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="grid gap-8 md:grid-cols-2">
-      <Swatch design={m.design} color={m.color} className="aspect-square w-full" />
+      <Swatch design={m.design} color={m.color} imageUrl={m.imageUrl} className="aspect-square w-full" />
       <div className="space-y-4">
         <div>
           <p className="text-sm font-semibold text-stone-500">{FABRIC_DESIGNS[m.design as FabricDesign]?.label}</p>

@@ -17,9 +17,21 @@ A client picks a **style** and a **fabric design** and enters a **budget**. The 
 ## Order journey
 
 ```
-Placed → (tailor accepts) → Waiting for measurement* → Measurements received → Being sewn → Ready → Out for delivery* → Completed
+Placed → tailor accepts → client pays → Waiting for measurement* → Measurements received → Being sewn → Ready → Out for delivery* → Completed → client reviews
 ```
 \* Skipped if the client entered their own measurements, or chose to pick up.
+
+At every step the people involved get an **in-app notification** (the 🔔 in the header) and an **SMS**.
+
+## Features
+
+- **Mobile Money payments.** Clients pay with MTN MoMo, Telecel Cash, AirtelTigo Money or card through [Paystack](https://paystack.com/gh), once the tailor accepts. No measuring, sewing or delivery starts until the order is paid.
+- **SMS and in-app notifications** for new orders, acceptance, payment, measurement visits, sewing, ready, on-the-way and delivered. SMS is sent through [Arkesel](https://arkesel.com). Agents and riders nearby get an SMS when a new job appears.
+- **Photos.** Tailors upload photos of their fabric and a portfolio of their work. The admin uploads photos for the style catalogue.
+- **Public tailor profiles** show photos, styles and prices, fabric in stock, a map and reviews.
+- **Ratings and reviews.** Clients rate the tailor (1–5 stars) after an order is completed, and the average appears on profiles and recommendations.
+- **Payouts.** When an order is completed, the app records what is owed. The tailor gets their sewing and fabric price minus a 10% platform commission, the measurement agent gets the visit fee, and the rider gets the delivery fee. Each partner sees this on an **Earnings** page. The admin sends Mobile Money, enters the transaction ID to mark the payout paid, and the partner gets an SMS.
+- **Mobile app.** The website can be installed on a phone's home screen. A native Android/iPhone app is in [`mobile/`](mobile/README.md).
 
 ## Running it locally
 
@@ -31,6 +43,8 @@ cp .env.example .env          # then set AUTH_SECRET to a long random string
 npm run setup                 # creates the database and loads demo data
 npm run dev                   # open http://localhost:3000
 ```
+
+Without payment or SMS keys, the app runs in **demo mode**. Payments go through a pretend Mobile Money screen, and SMS messages are printed in the terminal instead of being sent.
 
 ### Demo accounts (password: `password123`)
 
@@ -44,18 +58,24 @@ npm run dev                   # open http://localhost:3000
 | rider2@demo.gh | Delivery rider (waiting for verification) |
 | admin@demo.gh | Admin |
 
+## Going live
+
+1. **Hosting.** Deploy to a Node.js host such as Railway, Render or a VPS. Switch the database to PostgreSQL: change `provider` in `prisma/schema.prisma` to `"postgresql"` and set `DATABASE_URL`. Set `APP_URL` to your web address.
+2. **Payments.** Create a [Paystack Ghana](https://paystack.com/gh) business account, complete their business verification, and put your secret key in `PAYSTACK_SECRET_KEY`. In the Paystack dashboard, set the webhook URL to `<APP_URL>/api/paystack/webhook`.
+3. **SMS.** Create an [Arkesel](https://arkesel.com) account, register a sender ID (e.g. `TailorConn`), and set `ARKESEL_API_KEY` and `SMS_SENDER_ID`.
+4. **Photos.** Uploads are saved in `UPLOAD_DIR`. Use a persistent disk, or switch `src/lib/uploads.ts` to cloud storage such as S3 or Cloudflare R2.
+
 ## Tech
 
 - [Next.js](https://nextjs.org) (React) with TypeScript and Tailwind CSS
-- [Prisma](https://www.prisma.io) database layer: SQLite locally, switch to PostgreSQL for production
+- [Prisma](https://www.prisma.io) database layer: SQLite locally, PostgreSQL for production
 - [Leaflet](https://leafletjs.com) + OpenStreetMap for maps (free, no API key)
-- Browser geolocation for live location
+- Paystack for payments and Arkesel for SMS
+- [Expo](https://expo.dev) (React Native) for the mobile app
 
-## Not built yet
+## Possible next steps
 
-- **Payments**: Mobile Money (MTN MoMo, Telecel Cash, AirtelTigo) via Paystack or Hubtel
-- **Notifications**: SMS/WhatsApp when an order changes stage
-- **Photos**: real photos of styles and fabrics (they use illustrations for now)
-- **Ratings and reviews** after an order is completed
-- **Payouts** to tailors, agents and riders
-- **Mobile app** (React Native / Expo, reusing the same backend)
+- Automatic payouts through Paystack Transfers, instead of the admin sending Mobile Money by hand
+- WhatsApp notifications
+- Refunds and disputes
+- Chat between a client and their tailor

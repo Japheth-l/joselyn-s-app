@@ -12,13 +12,14 @@ export type Recommendation = {
   lat: number;
   lng: number;
   rating: number;
+  reviewCount: number;
   distanceKm: number;
   laborPrice: number;
   daysToMake: number;
   fabricPrice: number; // cheapest matching fabric for the style's yardage (0 if client brings their own)
   estimate: number;
   withinBudget: boolean;
-  materials: { id: string; name: string; design: string; color: string; pricePerYard: number }[];
+  materials: { id: string; name: string; design: string; color: string; pricePerYard: number; imageUrl: string | null }[];
 };
 
 /**
@@ -55,9 +56,9 @@ export async function recommendTailors(input: {
     const estimate = o.price + fabricPrice;
     all.push({
       businessId: b.id, name: b.name, kind: b.kind, address: b.address, city: b.city, lat: b.lat, lng: b.lng,
-      rating: b.rating, distanceKm: Math.round(distanceKm(input.lat, input.lng, b.lat, b.lng) * 10) / 10,
+      rating: b.rating, reviewCount: b.reviewCount, distanceKm: Math.round(distanceKm(input.lat, input.lng, b.lat, b.lng) * 10) / 10,
       laborPrice: o.price, daysToMake: o.daysToMake, fabricPrice, estimate, withinBudget: estimate <= input.budget,
-      materials: b.materials.map((m) => ({ id: m.id, name: m.name, design: m.design, color: m.color, pricePerYard: m.pricePerYard })),
+      materials: b.materials.map((m) => ({ id: m.id, name: m.name, design: m.design, color: m.color, pricePerYard: m.pricePerYard, imageUrl: m.imageUrl })),
     });
   }
 

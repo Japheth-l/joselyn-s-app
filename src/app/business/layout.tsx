@@ -6,6 +6,7 @@ const TABS = [
   { href: "/business", label: "Orders" },
   { href: "/business/stock", label: "Fabric stock" },
   { href: "/business/styles", label: "Styles & prices" },
+  { href: "/business/photos", label: "Photos" },
   { href: "/business/profile", label: "Shop profile & location" },
 ];
 
@@ -19,6 +20,9 @@ export default async function BusinessLayout({ children }: { children: React.Rea
       <div>
         <p className="text-sm font-semibold text-stone-500">{BUSINESS_KINDS[b.kind as keyof typeof BUSINESS_KINDS]} portal</p>
         <h1 className="page-title">{b.name}</h1>
+        {status === "VERIFIED" && (
+          <a href={`/tailors/${b.id}`} className="text-sm font-medium text-brand-700 hover:underline">View my public profile ↗</a>
+        )}
       </div>
 
       {status !== "VERIFIED" && (

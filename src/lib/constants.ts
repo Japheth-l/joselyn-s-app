@@ -82,3 +82,11 @@ export const VERIFICATION_LABELS: Record<string, string> = {
   VERIFIED: "Verified",
   REJECTED: "Rejected",
 };
+
+// Share of the tailor's sewing + fabric price kept by the platform.
+export const PLATFORM_COMMISSION = 0.1;
+
+export const PAYMENT_LABELS: Record<string, string> = {
+  UNPAID: "Not paid",
+  PAID: "Paid",
+};

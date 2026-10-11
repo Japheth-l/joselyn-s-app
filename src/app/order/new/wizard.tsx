@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import type { Style } from "@prisma/client";
 import { getRecommendations, placeSewOrder } from "@/app/actions/orders";
 import { TailorMap } from "@/components/map";
-import { Swatch } from "@/components/swatch";
+import { StyleImage, Swatch } from "@/components/swatch";
 import { useLiveLocation, type LatLng } from "@/components/use-location";
 import { BUSINESS_KINDS, CITIES, FABRIC_DESIGNS, FEES, MEASUREMENT_FIELDS } from "@/lib/constants";
 import { deliveryFee, distanceKm, formatCedis } from "@/lib/geo";
@@ -106,7 +106,7 @@ export function OrderWizard({ styles, home }: { styles: Style[]; home: LatLng })
                 onClick={() => { setStyle(s); go(1); }}
                 className={`card flex gap-4 text-left transition hover:border-brand-500 ${style?.id === s.id ? "border-brand-500 ring-2 ring-brand-100" : ""}`}
               >
-                <span className="text-4xl">{s.icon}</span>
+                <StyleImage icon={s.icon} imageUrl={s.imageUrl} className="h-20 w-20 shrink-0" />
                 <span>
                   <span className="block font-semibold">{s.name}</span>
                   <span className="block text-sm text-stone-600">{s.description}</span>
@@ -184,7 +184,7 @@ export function OrderWizard({ styles, home }: { styles: Style[]; home: LatLng })
                         <h3 className="font-semibold">{r.name} <span className="badge bg-brand-50 text-brand-700">✓ Verified</span></h3>
                         <p className="text-sm text-stone-600">
                           {BUSINESS_KINDS[r.kind as keyof typeof BUSINESS_KINDS]} · {r.address}, {r.city} · {r.distanceKm} km away
-                          {r.rating > 0 && <> · ⭐ {r.rating.toFixed(1)}</>}
+                          {r.reviewCount > 0 && <> · ⭐ {r.rating.toFixed(1)} ({r.reviewCount})</>}
                         </p>
                       </div>
                       <div className="text-right">
@@ -207,7 +207,7 @@ export function OrderWizard({ styles, home }: { styles: Style[]; home: LatLng })
                               onClick={() => setMaterialId(m.id)}
                               className={`flex items-center gap-3 rounded-lg border p-2 text-left text-sm ${materialId === m.id ? "border-brand-500 bg-brand-50" : "border-stone-200"}`}
                             >
-                              <Swatch design={m.design} color={m.color} className="h-10 w-10 shrink-0" />
+                              <Swatch design={m.design} color={m.color} imageUrl={m.imageUrl} className="h-10 w-10 shrink-0" />
                               <span>
                                 <span className="block font-medium">{m.name}</span>
                                 <span className="text-stone-500">{formatCedis(m.pricePerYard)}/yard · {formatCedis(m.pricePerYard * (style?.yardsNeeded ?? 0))} total</span>
@@ -217,9 +217,14 @@ export function OrderWizard({ styles, home }: { styles: Style[]; home: LatLng })
                         </div>
                       </div>
                     )}
-                    <div className="mt-4 flex gap-2">
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
                       {tailor?.businessId !== r.businessId ? (
                         <button className="btn-secondary" onClick={() => { setTailor(r); setMaterialId(null); }}>Choose this tailor</button>
+                      ) : null}
+                      {tailor?.businessId !== r.businessId ? (
+                        <a href={`/tailors/${r.businessId}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-700 hover:underline">
+                          See photos & reviews ↗
+                        </a>
                       ) : (
                         <button className="btn-primary" disabled={design !== "OWN" && !materialId} onClick={() => go(4)}>
                           Continue
@@ -358,7 +363,7 @@ export function OrderWizard({ styles, home }: { styles: Style[]; home: LatLng })
             {prices.total > Number(budget) && (
               <p className="text-sm text-clay-500">This is {formatCedis(prices.total - Number(budget))} over your budget of {formatCedis(Number(budget))}.</p>
             )}
-            <p className="text-xs text-stone-500">You&apos;ll pay with Mobile Money once the tailor accepts. Online payment is coming soon.</p>
+            <p className="text-xs text-stone-500">Nothing to pay yet. Once the tailor accepts, you&apos;ll pay with MTN MoMo, Telecel Cash, AirtelTigo Money or card.</p>
             <button className="btn-primary w-full" onClick={submit} disabled={pending}>{pending ? "Placing order…" : "Place order"}</button>
           </div>
         </Section>

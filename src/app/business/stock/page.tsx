@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { FABRIC_DESIGNS, type FabricDesign } from "@/lib/constants";
-import { removeMaterial, updateStock } from "@/app/actions/business";
+import { removeMaterial, setMaterialPhoto, updateStock } from "@/app/actions/business";
+import { PhotoButton } from "@/components/photo-button";
 import { Swatch } from "@/components/swatch";
 import { AddMaterialForm } from "./add-form";
 
@@ -16,7 +17,7 @@ export default async function StockPage() {
         {materials.length === 0 && <p className="card text-stone-600">You haven&apos;t added any fabric yet.</p>}
         {materials.map((m) => (
           <div key={m.id} className="card flex flex-wrap items-center gap-4">
-            <Swatch design={m.design} color={m.color} className="h-14 w-14 shrink-0" />
+            <Swatch design={m.design} color={m.color} imageUrl={m.imageUrl} className="h-14 w-14 shrink-0" />
             <div className="min-w-40 flex-1">
               <p className="font-semibold">{m.name}</p>
               <p className="text-sm text-stone-500">
@@ -33,6 +34,7 @@ export default async function StockPage() {
               </label>
               <button className="btn-secondary">Save</button>
             </form>
+            <PhotoButton action={setMaterialPhoto.bind(null, m.id)} label={m.imageUrl ? "Change photo" : "Add photo"} />
             <form action={removeMaterial.bind(null, m.id)}>
               <button className="text-sm text-red-700 hover:underline">Remove</button>
             </form>

@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { formatCedis } from "@/lib/geo";
 import { StatusBadge } from "@/components/order-status";
 
-export default async function MyOrders() {
+export default async function MyOrders({ searchParams }: { searchParams: Promise<{ payment?: string }> }) {
+  const { payment } = await searchParams;
   const user = await requireUser("CLIENT");
   const orders = await db.order.findMany({
     where: { clientId: user.id },
@@ -22,6 +23,11 @@ export default async function MyOrders() {
         </div>
       </div>
 
+      {payment === "failed" && (
+        <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+          We couldn&apos;t confirm your payment. If money left your account, it will show here within a few minutes; otherwise please try again.
+        </p>
+      )}
       {orders.length === 0 ? (
         <div className="card text-center">
           <p className="text-4xl">🧵</p>
@@ -42,6 +48,9 @@ export default async function MyOrders() {
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="font-semibold">{formatCedis(o.total)}</span>
+                  {o.paymentStatus === "UNPAID" && !["PLACED", "DECLINED", "CANCELLED"].includes(o.status) && (
+                    <span className="badge bg-gold-400 text-stone-900">Pay now</span>
+                  )}
                   <StatusBadge status={o.status} />
                 </div>
               </Link>

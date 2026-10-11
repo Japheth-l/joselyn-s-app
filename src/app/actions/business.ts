@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CITIES, FABRIC_DESIGNS } from "@/lib/constants";
+import { saveImage } from "@/lib/uploads";
 
 export type ActionState = { error?: string; ok?: string } | undefined;
 
@@ -45,9 +46,42 @@ export async function addMaterial(_prev: ActionState, formData: FormData): Promi
   const b = await myBusiness();
   const parsed = materialSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  await db.material.create({ data: { ...parsed.data, businessId: b.id } });
+  let imageUrl: string | null;
+  try {
+    imageUrl = await saveImage(formData.get("photo"));
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  await db.material.create({ data: { ...parsed.data, imageUrl, businessId: b.id } });
   revalidatePath("/business/stock");
   return { ok: `Added ${parsed.data.name}.` };
+}
+
+export async function setMaterialPhoto(materialId: string, formData: FormData) {
+  const b = await myBusiness();
+  const imageUrl = await saveImage(formData.get("photo"));
+  if (imageUrl) await db.material.updateMany({ where: { id: materialId, businessId: b.id }, data: { imageUrl } });
+  revalidatePath("/business/stock");
+}
+
+export async function addPortfolioPhoto(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const b = await myBusiness();
+  try {
+    const url = await saveImage(formData.get("photo"));
+    if (!url) return { error: "Choose a photo first." };
+    const caption = String(formData.get("caption") ?? "").trim().slice(0, 200);
+    await db.businessPhoto.create({ data: { businessId: b.id, url, caption } });
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  revalidatePath("/business/photos");
+  return { ok: "Photo added." };
+}
+
+export async function removePortfolioPhoto(photoId: string) {
+  const b = await myBusiness();
+  await db.businessPhoto.deleteMany({ where: { id: photoId, businessId: b.id } });
+  revalidatePath("/business/photos");
 }
 
 export async function updateStock(materialId: string, formData: FormData) {

@@ -40,6 +40,10 @@ export function AddMaterialForm() {
           <input id="m-yards" name="yardsInStock" type="number" step="0.5" min="0" className="input" required />
         </div>
       </div>
+      <div>
+        <label className="label" htmlFor="m-photo">Photo (optional)</label>
+        <input id="m-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" className="block w-full text-sm" />
+      </div>
       {state?.error && <p className="text-sm text-red-700">{state.error}</p>}
       {state?.ok && <p className="text-sm text-brand-700">{state.ok}</p>}
       <button className="btn-primary w-full" disabled={pending}>Add to stock</button>

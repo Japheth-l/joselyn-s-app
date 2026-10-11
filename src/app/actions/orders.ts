@@ -8,6 +8,8 @@ import { db } from "@/lib/db";
 import { FABRIC_DESIGNS, FEES, MEASUREMENT_FIELDS } from "@/lib/constants";
 import { deliveryFee, distanceKm } from "@/lib/geo";
 import { recommendTailors } from "@/lib/recommend";
+import { markPaid, orderEvent } from "@/lib/order-events";
+import { newReference, paymentsLive, startCheckout } from "@/lib/payments";
 
 const latLng = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
 const measurementsSchema = z.record(z.enum(MEASUREMENT_FIELDS.map((f) => f.key) as [string, ...string[]]), z.number().positive().max(120));
@@ -97,6 +99,7 @@ export async function placeSewOrder(input: z.input<typeof sewOrderSchema>): Prom
   });
   if (!order) return { error: "Sorry, that fabric just sold out. Please pick another." };
 
+  await orderEvent(order.id, "placed");
   redirect(`/orders/${order.id}?placed=1`);
 }
 
@@ -142,15 +145,42 @@ export async function placeFabricOrder(input: z.input<typeof fabricOrderSchema>)
   });
   if (!order) return { error: `Only ${m.yardsInStock} yards left in stock.` };
 
+  await orderEvent(order.id, "placed");
   redirect(`/orders/${order.id}?placed=1`);
+}
+
+// ---------- Payment ----------
+
+/** Send the client to Mobile Money / card checkout for an accepted order. */
+export async function payForOrder(orderId: string) {
+  const user = await requireUser("CLIENT");
+  const o = await db.order.findFirst({ where: { id: orderId, clientId: user.id } });
+  if (!o || o.paymentStatus === "PAID" || ["PLACED", "DECLINED", "CANCELLED"].includes(o.status)) {
+    redirect(`/orders/${orderId}`);
+  }
+  const reference = newReference(o.id);
+  await db.order.update({ where: { id: o.id }, data: { paymentRef: reference } });
+  const url = await startCheckout({ email: user.email, amountCedis: o.total, reference, orderId: o.id });
+  redirect(url);
+}
+
+/** Demo-mode checkout only: pretend the Mobile Money prompt was approved. */
+export async function confirmDemoPayment(reference: string) {
+  const user = await requireUser("CLIENT");
+  if (paymentsLive()) throw new Error("Demo payments are disabled when Paystack is configured.");
+  const o = await db.order.findFirst({ where: { paymentRef: reference, clientId: user.id } });
+  if (!o) throw new Error("Payment not found.");
+  await markPaid(reference, null);
+  redirect(`/orders/${o.id}?paid=1`);
 }
 
 // ---------- Status changes ----------
 
 /** Move an order from one status to another only if it is still in the expected state. */
-async function transition(where: Record<string, unknown>, data: Record<string, unknown>) {
+async function transition(where: Record<string, unknown>, data: Record<string, unknown>, event?: Parameters<typeof orderEvent>[1]) {
   const res = await db.order.updateMany({ where, data });
   if (res.count === 0) throw new Error("This order has changed. Refresh the page and try again.");
+  if (event) await orderEvent(where.id as string, event);
   revalidatePath("/", "layout");
 }
 
@@ -172,9 +202,12 @@ function parseMeasurements(formData: FormData) {
   return JSON.stringify(parsed.data);
 }
 
+// Work after the tailor accepts only goes ahead once the client has paid.
+const PAID = { paymentStatus: "PAID" };
+
 export async function clientCancel(orderId: string) {
   const user = await requireUser("CLIENT");
-  await transition({ id: orderId, clientId: user.id, status: "PLACED" }, { status: "CANCELLED" });
+  await transition({ id: orderId, clientId: user.id, status: "PLACED" }, { status: "CANCELLED" }, "cancelled");
   await restoreStock(orderId);
 }
 
@@ -191,12 +224,12 @@ export async function businessAccept(orderId: string) {
     order.kind === "FABRIC" ? "READY"
     : order.measurementMethod === "SELF" ? "MEASURED"
     : "AWAITING_MEASUREMENT";
-  await transition({ id: orderId, businessId, status: "PLACED" }, { status: next });
+  await transition({ id: orderId, businessId, status: "PLACED" }, { status: next }, "accepted");
 }
 
 export async function businessDecline(orderId: string) {
   const businessId = await myBusinessId();
-  await transition({ id: orderId, businessId, status: "PLACED" }, { status: "DECLINED" });
+  await transition({ id: orderId, businessId, status: "PLACED" }, { status: "DECLINED" }, "declined");
   await restoreStock(orderId);
 }
 
@@ -204,24 +237,24 @@ export async function businessDecline(orderId: string) {
 export async function businessRecordMeasurements(orderId: string, formData: FormData) {
   const businessId = await myBusinessId();
   await transition(
-    { id: orderId, businessId, status: "AWAITING_MEASUREMENT", measurementMethod: "AT_SHOP" },
+    { id: orderId, businessId, status: "AWAITING_MEASUREMENT", measurementMethod: "AT_SHOP", ...PAID },
     { status: "MEASURED", measurements: parseMeasurements(formData) },
   );
 }
 
 export async function businessStartSewing(orderId: string) {
   const businessId = await myBusinessId();
-  await transition({ id: orderId, businessId, status: "MEASURED" }, { status: "SEWING" });
+  await transition({ id: orderId, businessId, status: "MEASURED", ...PAID }, { status: "SEWING" }, "sewing");
 }
 
 export async function businessMarkReady(orderId: string) {
   const businessId = await myBusinessId();
-  await transition({ id: orderId, businessId, status: "SEWING" }, { status: "READY" });
+  await transition({ id: orderId, businessId, status: "SEWING" }, { status: "READY" }, "ready");
 }
 
 export async function businessMarkCollected(orderId: string) {
   const businessId = await myBusinessId();
-  await transition({ id: orderId, businessId, status: "READY", fulfilment: "PICKUP" }, { status: "COMPLETED" });
+  await transition({ id: orderId, businessId, status: "READY", fulfilment: "PICKUP", ...PAID }, { status: "COMPLETED" }, "completed");
 }
 
 async function requireVerifiedAgent(role: "MEASURER" | "RIDER") {
@@ -233,8 +266,9 @@ async function requireVerifiedAgent(role: "MEASURER" | "RIDER") {
 export async function measurerClaim(orderId: string) {
   const user = await requireVerifiedAgent("MEASURER");
   await transition(
-    { id: orderId, status: "AWAITING_MEASUREMENT", measurementMethod: "HOME_VISIT", measurerId: null },
+    { id: orderId, status: "AWAITING_MEASUREMENT", measurementMethod: "HOME_VISIT", measurerId: null, ...PAID },
     { measurerId: user.id },
+    "measurer_assigned",
   );
 }
 
@@ -243,18 +277,43 @@ export async function measurerSubmit(orderId: string, formData: FormData) {
   await transition(
     { id: orderId, status: "AWAITING_MEASUREMENT", measurerId: user.id },
     { status: "MEASURED", measurements: parseMeasurements(formData) },
+    "measured",
   );
 }
 
 export async function riderClaim(orderId: string) {
   const user = await requireVerifiedAgent("RIDER");
   await transition(
-    { id: orderId, status: "READY", fulfilment: "DELIVERY", riderId: null },
+    { id: orderId, status: "READY", fulfilment: "DELIVERY", riderId: null, ...PAID },
     { riderId: user.id, status: "OUT_FOR_DELIVERY" },
+    "picked_up",
   );
 }
 
 export async function riderDelivered(orderId: string) {
   const user = await requireVerifiedAgent("RIDER");
-  await transition({ id: orderId, status: "OUT_FOR_DELIVERY", riderId: user.id }, { status: "COMPLETED" });
+  await transition({ id: orderId, status: "OUT_FOR_DELIVERY", riderId: user.id }, { status: "COMPLETED" }, "completed");
+}
+
+// ---------- Reviews ----------
+
+export async function submitReview(orderId: string, formData: FormData) {
+  const user = await requireUser("CLIENT");
+  const { rating, comment } = z.object({
+    rating: z.coerce.number().int().min(1).max(5),
+    comment: z.string().trim().max(1000).default(""),
+  }).parse(Object.fromEntries(formData));
+
+  const o = await db.order.findFirst({ where: { id: orderId, clientId: user.id, status: "COMPLETED" }, include: { review: true } });
+  if (!o || o.review) throw new Error("This order can't be reviewed.");
+
+  await db.$transaction(async (tx) => {
+    await tx.review.create({ data: { orderId, businessId: o.businessId, clientId: user.id, rating, comment } });
+    const agg = await tx.review.aggregate({ where: { businessId: o.businessId }, _avg: { rating: true }, _count: true });
+    await tx.business.update({
+      where: { id: o.businessId },
+      data: { rating: Math.round((agg._avg.rating ?? 0) * 10) / 10, reviewCount: agg._count },
+    });
+  });
+  revalidatePath("/", "layout");
 }

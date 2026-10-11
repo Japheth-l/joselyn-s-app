@@ -14,7 +14,7 @@ export default async function MeasurerPage() {
 
   const [open, mine] = await Promise.all([
     db.order.findMany({
-      where: { status: "AWAITING_MEASUREMENT", measurementMethod: "HOME_VISIT", measurerId: null },
+      where: { status: "AWAITING_MEASUREMENT", measurementMethod: "HOME_VISIT", measurerId: null, paymentStatus: "PAID" },
       include: { style: true, business: true },
       orderBy: { measurementTime: "asc" },
     }),

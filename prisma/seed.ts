@@ -97,6 +97,10 @@ const BASE_LABOUR: Record<string, number> = {
 
 async function main() {
   // Reset, in dependency order.
+  await db.notification.deleteMany();
+  await db.payout.deleteMany();
+  await db.review.deleteMany();
+  await db.businessPhoto.deleteMany();
   await db.order.deleteMany();
   await db.material.deleteMany();
   await db.businessStyle.deleteMany();
@@ -117,7 +121,7 @@ async function main() {
         name: `${b.name.split(" ")[0]} Owner`, email: `business${i + 1}@demo.gh`, phone: `024000000${i}`, passwordHash, role: "BUSINESS",
         business: {
           create: {
-            name: b.name, kind: b.kind, city: b.city, address: b.address, lat: b.lat, lng: b.lng, rating: b.rating,
+            name: b.name, kind: b.kind, city: b.city, address: b.address, lat: b.lat, lng: b.lng,
             phone: `024000000${i}`, registrationNumber: `BN-${100000 + i}`,
             verificationStatus: b.verified ? "VERIFIED" : "PENDING",
             description: `${b.name} serves clients across ${b.city}.`,

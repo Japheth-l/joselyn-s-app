@@ -64,6 +64,7 @@ export function BuyFabricForm({ material, shop }: {
         {fulfilment === "DELIVERY" && <div className="flex justify-between"><span>Delivery</span><span>{live.location ? formatCedis(delivery) : "Share location to see"}</span></div>}
         <div className="flex justify-between font-bold"><span>Total</span><span>{formatCedis(fabric + delivery)}</span></div>
       </div>
+      <p className="text-xs text-stone-500">You&apos;ll pay with Mobile Money or card once the shop confirms it has your fabric.</p>
       {error && <p className="text-sm text-red-700">{error}</p>}
       <button className="btn-primary w-full" onClick={buy}
         disabled={pending || qty <= 0 || qty > material.yardsInStock || (fulfilment === "DELIVERY" && (!live.location || !address))}>

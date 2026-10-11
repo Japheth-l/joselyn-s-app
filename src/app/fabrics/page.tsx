@@ -40,7 +40,7 @@ export default async function FabricsPage({ searchParams }: { searchParams: Prom
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sorted.map((m) => (
             <Link key={m.id} href={`/fabrics/${m.id}`} className="card hover:border-brand-500">
-              <Swatch design={m.design} color={m.color} className="mb-3 h-28" />
+              <Swatch design={m.design} color={m.color} imageUrl={m.imageUrl} className="mb-3 h-28 w-full" />
               <p className="font-semibold">{m.name}</p>
               <p className="text-sm text-stone-500">{m.business.name} · {m.km.toFixed(1)} km</p>
               <p className="mt-2 flex justify-between text-sm">

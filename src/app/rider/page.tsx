@@ -13,7 +13,7 @@ export default async function RiderPage() {
 
   const [open, mine] = await Promise.all([
     db.order.findMany({
-      where: { status: "READY", fulfilment: "DELIVERY", riderId: null },
+      where: { status: "READY", fulfilment: "DELIVERY", riderId: null, paymentStatus: "PAID" },
       include: { style: true, material: true, business: true },
       orderBy: { updatedAt: "asc" },
     }),

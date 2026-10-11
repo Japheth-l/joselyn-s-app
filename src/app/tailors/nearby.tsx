@@ -9,7 +9,7 @@ import { distanceKm, formatCedis } from "@/lib/geo";
 
 type Tailor = {
   id: string; name: string; kind: string; address: string; city: string; phone: string; lat: number; lng: number;
-  rating: number; styles: string[]; fromPrice: number; homeKm: number;
+  rating: number; reviewCount: number; styles: string[]; fromPrice: number; homeKm: number;
 };
 
 export function NearbyTailors({ home, tailors }: { home: { lat: number; lng: number }; tailors: Tailor[] }) {
@@ -42,11 +42,12 @@ export function NearbyTailors({ home, tailors }: { home: { lat: number; lng: num
                 </div>
                 <div className="text-right text-sm">
                   <p className="font-semibold">{t.km.toFixed(1)} km</p>
-                  {t.rating > 0 && <p>⭐ {t.rating.toFixed(1)}</p>}
+                  {t.reviewCount > 0 && <p>⭐ {t.rating.toFixed(1)} ({t.reviewCount})</p>}
                 </div>
               </div>
               <p className="mt-2 text-xs text-stone-500">Sews: {t.styles.join(", ")}</p>
               <p className="mt-1 text-sm">Sewing from <strong>{formatCedis(t.fromPrice)}</strong> · 📞 {t.phone}</p>
+              <Link href={`/tailors/${t.id}`} className="mt-2 inline-block text-sm font-medium text-brand-700 hover:underline">Photos, reviews & fabric →</Link>
             </li>
           ))}
         </ul>

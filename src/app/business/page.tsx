@@ -54,6 +54,11 @@ export default async function BusinessOrders() {
                   </div>
                   <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
                     <StatusBadge status={o.status} />
+                    {!["PLACED", "DECLINED", "CANCELLED"].includes(o.status) && (
+                      <span className={`badge ${o.paymentStatus === "PAID" ? "bg-brand-100 text-brand-700" : "bg-gold-100 text-gold-500"}`}>
+                        {o.paymentStatus === "PAID" ? "✓ Paid" : "Awaiting payment"}
+                      </span>
+                    )}
                     {o.kind === "SEW" && (
                       <span>Fabric: {o.material ? `${o.material.name} (${o.yards} yd)` : "client brings own"}</span>
                     )}
@@ -65,7 +70,10 @@ export default async function BusinessOrders() {
                   {o.notes && <p className="rounded-lg bg-stone-50 p-2 text-sm">📝 {o.notes}</p>}
                   <MeasurementList json={o.measurements} />
 
-                  {verified && (
+                  {verified && o.paymentStatus !== "PAID" && !["PLACED", "DECLINED", "CANCELLED"].includes(o.status) && (
+                    <p className="text-sm text-stone-500">Waiting for the client to pay before work continues. They&apos;ve been notified.</p>
+                  )}
+                  {verified && (o.paymentStatus === "PAID" || o.status === "PLACED") && (
                     <div className="flex flex-wrap gap-2">
                       {o.status === "PLACED" && (
                         <>
