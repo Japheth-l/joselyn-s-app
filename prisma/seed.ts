@@ -96,6 +96,12 @@ const BASE_LABOUR: Record<string, number> = {
 };
 
 async function main() {
+  // With --if-empty (used on deploy), only seed a brand-new database; never wipe real data.
+  if (process.argv.includes("--if-empty") && (await db.user.count()) > 0) {
+    console.log("Database already has data; skipping demo seed.");
+    return;
+  }
+
   // Reset, in dependency order.
   await db.notification.deleteMany();
   await db.payout.deleteMany();
@@ -109,6 +115,8 @@ async function main() {
   await db.user.deleteMany();
 
   const passwordHash = await bcrypt.hash("password123", 10);
+  // On a public deployment set ADMIN_PASSWORD so the admin account isn't guessable.
+  const adminPasswordHash = process.env.ADMIN_PASSWORD ? await bcrypt.hash(process.env.ADMIN_PASSWORD, 10) : passwordHash;
 
   const styleIds: Record<string, string> = {};
   for (const { key, ...s } of STYLES) {
@@ -137,7 +145,7 @@ async function main() {
 
   await db.user.createMany({
     data: [
-      { name: "Platform Admin", email: "admin@demo.gh", phone: "0200000000", passwordHash, role: "ADMIN" },
+      { name: "Platform Admin", email: "admin@demo.gh", phone: "0200000000", passwordHash: adminPasswordHash, role: "ADMIN" },
       { name: "Efua Mensah", email: "client@demo.gh", phone: "0241234567", passwordHash, role: "CLIENT", lat: 5.6037, lng: -0.187 },
       { name: "Yaw Measurer", email: "measurer@demo.gh", phone: "0551234567", passwordHash, role: "MEASURER", verificationStatus: "VERIFIED", ghanaCardNumber: "GHA-123456789-1", lat: 5.6, lng: -0.19 },
       { name: "Kofi Rider", email: "rider@demo.gh", phone: "0271234567", passwordHash, role: "RIDER", verificationStatus: "VERIFIED", ghanaCardNumber: "GHA-123456789-2", lat: 5.59, lng: -0.2 },
@@ -145,7 +153,7 @@ async function main() {
     ],
   });
 
-  console.log("Seeded demo data. All demo accounts use password: password123");
+  console.log(`Seeded demo data. Demo accounts use password: password123${process.env.ADMIN_PASSWORD ? " (admin uses ADMIN_PASSWORD)" : ""}`);
 }
 
 main().finally(() => db.$disconnect());

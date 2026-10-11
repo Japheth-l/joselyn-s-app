@@ -9,7 +9,8 @@ const PAYSTACK = "https://api.paystack.co";
 export const paymentsLive = () => Boolean(process.env.PAYSTACK_SECRET_KEY);
 
 export function appUrl() {
-  return (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  // Render sets RENDER_EXTERNAL_URL automatically, so APP_URL is optional there.
+  return (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
 export function newReference(orderId: string) {

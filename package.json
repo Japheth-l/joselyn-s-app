@@ -35,7 +35,9 @@
     "typecheck": "tsc --noEmit",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "setup": "prisma db push && tsx prisma/seed.ts"
+    "setup": "prisma db push && tsx prisma/seed.ts",
+    "deploy:build": "node scripts/postgres-schema.mjs && prisma generate --schema prisma/schema.postgres.prisma && next build",
+    "deploy:start": "prisma db push --schema prisma/schema.postgres.prisma --skip-generate && tsx prisma/seed.ts --if-empty && next start"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
