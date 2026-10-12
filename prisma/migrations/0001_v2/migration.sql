@@ -883,6 +883,10 @@ UPDATE "Order" o SET "status" = 'DELIVERY_ASSIGNED'
 WHERE o."status" = 'READY' AND EXISTS (SELECT 1 FROM "DeliveryAssignment" d WHERE d."orderId" = o."id" AND d."status" = 'OPEN');
 
 UPDATE "Business" b SET "completedOrders" = (SELECT COUNT(*) FROM "Order" o WHERE o."businessId" = b."id" AND o."status" = 'COMPLETED');
+-- V1 stored a typed-in rating (demo data used invented values). Ratings now come only from published reviews.
+UPDATE "Business" b SET
+  "reviewCount" = (SELECT COUNT(*) FROM "Review" r WHERE r."businessId" = b."id"),
+  "rating" = COALESCE((SELECT ROUND(AVG(r."rating")::numeric, 1) FROM "Review" r WHERE r."businessId" = b."id"), 0);
 
 -- Reviews.
 UPDATE "Review" SET "customerId" = "clientId";

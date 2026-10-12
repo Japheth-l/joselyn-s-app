@@ -168,5 +168,10 @@ export async function bookWorkshopVisit(actor: Actor, orderId: string, start: st
 
 export async function businessAppointments(actor: Actor, businessId: string) {
   requireMember(actor, businessId, "STAFF");
-  return db.appointment.findMany({ where: { businessId, status: { in: ["ACCEPTED", "REQUESTED"] } }, include: { customer: true, order: true }, orderBy: { windowStart: "asc" } });
+  // Workshop visits carry the businessId; home visits are linked through the business's order.
+  return db.appointment.findMany({
+    where: { status: { in: ["ACCEPTED", "REQUESTED"] }, OR: [{ businessId }, { order: { businessId } }] },
+    include: { customer: { select: { name: true } }, order: { select: { id: true, number: true, status: true } }, professional: { select: { name: true } } },
+    orderBy: { windowStart: "asc" },
+  });
 }

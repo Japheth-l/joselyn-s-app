@@ -154,6 +154,8 @@ export async function resubmitVerification(actor: Actor, businessId: string, not
   requireMember(actor, businessId, "OWNER");
   const b = await db.business.findUniqueOrThrow({ where: { id: businessId } });
   if (b.verificationStatus === "VERIFIED") throw invalid("This business is already verified.");
+  // A suspension is lifted by an administrator, not by sending documents (which would reset the status to PENDING).
+  if (b.verificationStatus === "SUSPENDED") throw invalid("This business is suspended. Contact support.");
   await db.verificationApplication.create({
     data: { subjectType: "BUSINESS", applicantId: actor.userId, businessId, details: { registrationNumber: b.registrationNumber, note: note.slice(0, 1000) }, documentIds },
   });

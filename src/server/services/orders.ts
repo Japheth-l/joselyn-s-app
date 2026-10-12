@@ -182,7 +182,10 @@ async function prepareQuote(tx: Tx, order: { id: string; fabricSource: string; m
     if (!listing) throw invalid("Choose which of your fabrics you'll use.");
     const qty = parseQty(d.fabricQty ?? "");
     if (!qty) throw invalid("Enter how much fabric the outfit needs.");
-    if (listing.qtyOnHandCenti - listing.qtyReservedCenti < qty) throw conflict(`You only have ${(listing.qtyOnHandCenti - listing.qtyReservedCenti) / 100} available of that fabric.`);
+    // Fabric this order already holds (a revision keeping the same fabric) counts as available to it.
+    const held = await tx.fabricReservation.aggregate({ where: { orderId: order.id, listingId: listing.id, status: { in: ["ACTIVE", "CONSUMED"] } }, _sum: { qtyCenti: true } });
+    const available = listing.qtyOnHandCenti - listing.qtyReservedCenti + (held._sum.qtyCenti ?? 0);
+    if (available < qty) throw conflict(`You only have ${available / 100} available of that fabric.`);
     fabricMinor = priceForQty(listing.pricePerUnitMinor, qty);
     fabricQtyCenti = qty;
     fabricListingId = listing.id;
