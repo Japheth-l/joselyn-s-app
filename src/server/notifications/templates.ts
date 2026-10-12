@@ -21,6 +21,7 @@ export const TEMPLATES = {
   "appointment.requested": "New measurement visit near you: {{when}}. Fee {{amount}}.",
   "appointment.accepted": "{{name}} will come to measure you on {{when}}. Phone: {{phone}}.",
   "appointment.failed": "Your measurement visit for order #{{order}} didn't happen: {{reason}}. Please book a new time.",
+  "appointment.reminder": "Reminder: measurement visit for order #{{order}} on {{when}}.",
   "measurements.submitted": "Measurements for order #{{order}} are ready for you to review.",
   "delivery.available": "New delivery near you: {{fee}}.",
   "delivery.accepted": "{{name}} will deliver order #{{order}}. Phone: {{phone}}.",

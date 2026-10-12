@@ -8,6 +8,7 @@ import { consumeOrderReservations } from "../inventory";
 import { notify, notifyBusiness, notifyMany } from "../notifications";
 import { orderEvent, transition } from "../order-flow";
 import { formatDateTime } from "@/lib/time";
+import { rateLimit } from "../rate-limit";
 import { hashCode, newHandoverCode } from "./orders";
 
 /**
@@ -122,6 +123,8 @@ export async function markInTransit(actor: Actor, assignmentId: string) {
 export async function markDelivered(actor: Actor, assignmentId: string, code: string) {
   const a = await riderLeg(actor, assignmentId);
   if (a.proofCodeHash === "LEGACY") throw invalid("This delivery started before handover codes existed. Ask the customer to confirm receipt in the app.");
+  // Six digits can be guessed by brute force; a handful of attempts per hour is plenty for a real handover.
+  await rateLimit(`handover:${a.id}`, 5, 3600);
   if (a.proofCodeHash !== hashCode(a.id, code.trim())) throw invalid("That code doesn't match. Ask the customer for the 6-digit code in their order.");
   await db.$transaction(async (tx) => {
     const res = await tx.deliveryAssignment.updateMany({ where: { id: a.id, status: { in: ["PICKED_UP", "IN_TRANSIT"] } }, data: { status: "DELIVERED", deliveredAt: new Date() } });

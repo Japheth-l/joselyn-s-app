@@ -13,6 +13,7 @@ import { notify, notifyBusiness, notifyMany } from "../notifications";
 import { orderEvent, requireOrderAccess, transition } from "../order-flow";
 import { WORK_STARTED } from "../order-machine";
 import { buildQuoteLines, deliveryFeeBetween } from "../pricing";
+import { rateLimit } from "../rate-limit";
 import { getSettings } from "../settings";
 import { validateDesignChoices } from "./catalogue";
 import { addRecord, checkRequired, ensureProfile, type MeasurementValues } from "./measurements";
@@ -551,6 +552,7 @@ export async function markCollected(actor: Actor, orderId: string, code: string)
   requireMember(actor, order.businessId, "STAFF");
   if (order.status !== "READY" || order.fulfilment !== "PICKUP") throw invalid("This order isn't waiting for collection.");
   if (order.amountPaidMinor < order.totalMinor) throw invalid("The balance must be paid before handover.");
+  await rateLimit(`handover:${orderId}`, 5, 3600);
   if (!order.handoverCodeHash || order.handoverCodeHash !== hashCode(orderId, code.trim())) throw invalid("That code doesn't match. Ask the customer to open their order and read the pickup code.");
   await db.$transaction(async (tx) => {
     if (order.kind === "FABRIC") await consumeOrderReservations(tx, orderId, actor.userId);

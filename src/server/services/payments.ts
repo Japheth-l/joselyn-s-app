@@ -61,12 +61,12 @@ async function applyConfirmedPayment(reference: string, check: { status: string;
     log.warn("payment.unknown_reference", { reference });
     return { applied: false, reason: "unknown" as const };
   }
+  // Nothing final yet: record nothing, so the later success isn't mistaken for a duplicate.
+  if (check.status !== "SUCCEEDED" && check.status !== "FAILED") return { applied: false, reason: "pending" as const };
   const outcome = await db.$transaction(async (tx) => {
-    try {
-      await tx.paymentEvent.create({ data: { provider, eventKey: check.eventKey, type: eventType } });
-    } catch {
-      return { applied: false, reason: "duplicate" as const };
-    }
+    // skipDuplicates (ON CONFLICT DO NOTHING) rather than catching an error, which would abort the transaction.
+    const fresh = await tx.paymentEvent.createMany({ data: [{ provider, eventKey: `${check.eventKey}:${check.status}`, type: eventType }], skipDuplicates: true });
+    if (fresh.count === 0) return { applied: false, reason: "duplicate" as const };
     if (check.status === "FAILED") {
       await tx.payment.updateMany({ where: { id: payment.id, status: "PENDING" }, data: { status: "FAILED", failureReason: "Declined or abandoned at checkout" } });
       return { applied: false, reason: "failed" as const };
@@ -88,6 +88,13 @@ async function applyConfirmedPayment(reference: string, check: { status: string;
   });
   if (outcome.applied && "order" in outcome && outcome.order) {
     const o = outcome.order;
+    if (["CANCELLED", "REFUNDED"].includes(o.status)) {
+      // Paid after the order was cancelled (e.g. the checkout finished after the reservation expired).
+      // The money is not ours to keep: refund it in full straight away.
+      log.warn("payment.after_cancellation", { orderId: o.id, paymentId: payment.id });
+      await issueRefund({ orderId: o.id, amountMinor: payment.amountMinor, reason: "Payment arrived after the order was cancelled", requestedById: o.customerId, decidedById: "system" });
+      return outcome;
+    }
     await notify(o.customerId, "payment.received", { amount: formatMoney(payment.amountMinor), order: o.number }, { link: `/orders/${o.id}`, orderId: o.id });
     if (o.businessId) await notifyBusiness(o.businessId, "payment.received.business", { amount: formatMoney(payment.amountMinor), order: o.number }, { link: `/biz/${o.businessId}/orders/${o.id}`, orderId: o.id });
     const { dispatchIfReady, announceAppointments } = await import("./deliveries");

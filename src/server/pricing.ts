@@ -1,4 +1,6 @@
+import { BRAND } from "@/lib/brand";
 import { bpsOf } from "@/lib/money";
+import { invalid } from "./errors";
 import { distanceKm } from "@/lib/geo";
 import type { Settings } from "./settings";
 
@@ -33,8 +35,8 @@ export function buildQuoteLines(q: QuoteInput, s: Pick<Settings, "serviceFeeBps"
   if (q.otherMinor > 0) lines.push({ kind: "OTHER", description: q.otherDescription || "Other", amountMinor: q.otherMinor });
   if (q.discountMinor > 0) lines.push({ kind: "DISCOUNT", description: "Discount", amountMinor: -q.discountMinor });
   const subtotal = lines.reduce((t, l) => t + l.amountMinor, 0);
-  if (subtotal < 0) throw new Error("Discount is larger than the quotation.");
+  if (subtotal < 0) throw invalid("The discount is larger than the quotation.");
   const fee = serviceFeeMinor(subtotal, s);
-  if (fee > 0) lines.push({ kind: "SERVICE_FEE", description: "Ntoma service fee", amountMinor: fee });
+  if (fee > 0) lines.push({ kind: "SERVICE_FEE", description: `${BRAND.name} service fee`, amountMinor: fee });
   return { lines, totalMinor: subtotal + fee };
 }
