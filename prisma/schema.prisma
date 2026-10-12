@@ -1,0 +1,220 @@
+// SQLite for local development. For production, change provider to "postgresql"
+// and point DATABASE_URL at a hosted Postgres database.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Role values: CLIENT | BUSINESS | MEASURER | RIDER | ADMIN  (see src/lib/constants.ts)
+// Verification values: NOT_REQUIRED | PENDING | VERIFIED | REJECTED
+model User {
+  id                 String    @id @default(cuid())
+  name               String
+  email              String    @unique
+  phone              String
+  passwordHash       String
+  role               String
+  // Measurers and riders must be verified by an admin before taking jobs.
+  verificationStatus String    @default("NOT_REQUIRED")
+  ghanaCardNumber    String?
+  // Last known area, used to show nearby jobs to measurers and riders.
+  lat                Float?
+  lng                Float?
+  createdAt          DateTime  @default(now())
+
+  business         Business?
+  notifications    Notification[]
+  payouts          Payout[]
+  reviews          Review[]
+  clientOrders     Order[]   @relation("ClientOrders")
+  measurementJobs  Order[]   @relation("MeasurerJobs")
+  deliveryJobs     Order[]   @relation("RiderJobs")
+}
+
+// A tailor, seamstress or sewing company.
+model Business {
+  id                 String   @id @default(cuid())
+  ownerId            String   @unique
+  owner              User     @relation(fields: [ownerId], references: [id])
+  name               String
+  kind               String   // TAILOR | SEAMSTRESS | COMPANY
+  description        String   @default("")
+  phone              String
+  address            String
+  city               String
+  lat                Float
+  lng                Float
+  registrationNumber String   // Business registration (ORC) or Ghana Card number
+  verificationStatus String   @default("PENDING")
+  rating             Float    @default(0)
+  reviewCount        Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  photos    BusinessPhoto[]
+  reviews   Review[]
+  materials Material[]
+  styles    BusinessStyle[]
+  orders    Order[]
+}
+
+// Global catalogue of outfit styles clients pick from.
+model Style {
+  id          String  @id @default(cuid())
+  name        String
+  category    String  // e.g. DRESS, KABA_AND_SLIT, SHIRT, SUIT, SMOCK
+  wearer      String  // WOMEN | MEN | UNISEX
+  description String
+  yardsNeeded Float   // Typical fabric needed
+  // Emoji shown when there is no photo.
+  icon        String
+  imageUrl    String?
+
+  businesses BusinessStyle[]
+  orders     Order[]
+}
+
+// Which styles a business sews, and their labour price for each.
+model BusinessStyle {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  styleId    String
+  style      Style    @relation(fields: [styleId], references: [id])
+  price      Float    // Labour price in GHS
+  daysToMake Int      @default(7)
+
+  @@unique([businessId, styleId])
+}
+
+// Fabric a business has in stock.
+model Material {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  design      String   // KENTE | WAX_PRINT | LACE | BATIK | SMOCK_CLOTH | PLAIN
+  color       String   // CSS colour used for the swatch
+  pricePerYard Float
+  yardsInStock Float
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+
+  orders Order[]
+}
+
+// Kind: SEW (style + fabric + tailoring) | FABRIC (fabric purchase only)
+// Status flow is defined in src/lib/constants.ts
+model Order {
+  id         String   @id @default(cuid())
+  kind       String   @default("SEW")
+  status     String   @default("PLACED")
+
+  clientId   String
+  client     User     @relation("ClientOrders", fields: [clientId], references: [id])
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  styleId    String?
+  style      Style?   @relation(fields: [styleId], references: [id])
+  materialId String?
+  material   Material? @relation(fields: [materialId], references: [id])
+  yards      Float    @default(0)
+  ownFabric  Boolean  @default(false)
+  notes      String   @default("")
+  budget     Float?
+
+  // Measurements: SELF (client entered) | HOME_VISIT | AT_SHOP
+  measurementMethod String?
+  measurementTime   DateTime?
+  measurements      String?   // JSON of measurement name -> inches
+  measurerId        String?
+  measurer          User?     @relation("MeasurerJobs", fields: [measurerId], references: [id])
+
+  // Fulfilment: DELIVERY | PICKUP
+  fulfilment  String  @default("PICKUP")
+  riderId     String?
+  rider       User?   @relation("RiderJobs", fields: [riderId], references: [id])
+
+  // Where the client is (for home visits and deliveries).
+  clientAddress String?
+  clientLat     Float?
+  clientLng     Float?
+
+  laborPrice     Float @default(0)
+  materialPrice  Float @default(0)
+  measurementFee Float @default(0)
+  deliveryFee    Float @default(0)
+  total          Float @default(0)
+
+  // Payment: UNPAID | PAID. The client pays once the tailor accepts.
+  paymentStatus String    @default("UNPAID")
+  paymentRef    String?   @unique
+  paidAt        DateTime?
+
+  review        Review?
+  payouts       Payout[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Portfolio photos a business shows on its public profile.
+model BusinessPhoto {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  url        String
+  caption    String   @default("")
+  createdAt  DateTime @default(now())
+}
+
+// A client's rating of a completed order.
+model Review {
+  id         String   @id @default(cuid())
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id])
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  clientId   String
+  client     User     @relation(fields: [clientId], references: [id])
+  rating     Int      // 1-5
+  comment    String   @default("")
+  createdAt  DateTime @default(now())
+}
+
+// In-app notification (also sent by SMS when an SMS provider is configured).
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  message   String
+  link      String   @default("")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+// Money owed to a tailor, measurement agent or rider for a completed order.
+// Status: PENDING | PAID (admin marks paid after sending Mobile Money).
+model Payout {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  orderId   String
+  order     Order     @relation(fields: [orderId], references: [id])
+  role      String    // BUSINESS | MEASURER | RIDER
+  amount    Float
+  status    String    @default("PENDING")
+  reference String?   // Mobile Money transaction ID when paid
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([orderId, userId])
+}
