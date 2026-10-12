@@ -46,7 +46,9 @@ export function ConfirmButton({ children, confirmText = "Tap again to confirm", 
     return () => clearTimeout(t);
   }, [armed]);
   if (!armed) {
-    return <button type="button" className={className} disabled={pending} onClick={() => setArmed(true)}>{children}</button>;
+    // Distinct keys: React must create a new element. Re-using the node would turn it into a submit button
+    // during this same click, and the browser would then submit on the first tap.
+    return <button key="arm" type="button" className={className} disabled={pending} onClick={() => setArmed(true)}>{children}</button>;
   }
-  return <button type="submit" className={`${className} ring-2 ring-offset-1 ring-red-300`} disabled={pending} autoFocus>{pending ? "Please wait…" : confirmText}</button>;
+  return <button key="confirm" type="submit" className={`${className} ring-2 ring-offset-1 ring-red-300`} disabled={pending} autoFocus>{pending ? "Please wait…" : confirmText}</button>;
 }
