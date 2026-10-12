@@ -1,168 +1,204 @@
-// SQLite for local development. For production, change provider to "postgresql"
-// and point DATABASE_URL at a hosted Postgres database.
+// Ntoma V2 data model. PostgreSQL in every environment; changes go through `prisma migrate`.
+// Conventions (see docs/V2_ARCHITECTURE.md):
+//   * Money: integer pesewas (GHS minor units), fields end in `Minor`.
+//   * Fabric quantities: integer hundredths of the listing's unit (yards or metres), fields end in `Centi`.
+//   * Status/enum-like values are strings validated in code (src/lib/enums.ts) so new values need no migration.
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// Role values: CLIENT | BUSINESS | MEASURER | RIDER | ADMIN  (see src/lib/constants.ts)
-// Verification values: NOT_REQUIRED | PENDING | VERIFIED | REJECTED
-model User {
-  id                 String    @id @default(cuid())
-  name               String
-  email              String    @unique
-  phone              String
-  passwordHash       String
-  role               String
-  // Measurers and riders must be verified by an admin before taking jobs.
-  verificationStatus String    @default("NOT_REQUIRED")
-  ghanaCardNumber    String?
-  // Last known area, used to show nearby jobs to measurers and riders.
-  lat                Float?
-  lng                Float?
-  createdAt          DateTime  @default(now())
+// ───────────────────────────── Accounts & access ─────────────────────────────
 
-  business         Business?
-  notifications    Notification[]
-  payouts          Payout[]
-  reviews          Review[]
-  clientOrders     Order[]   @relation("ClientOrders")
-  measurementJobs  Order[]   @relation("MeasurerJobs")
-  deliveryJobs     Order[]   @relation("RiderJobs")
+model User {
+  id                String    @id @default(cuid())
+  name              String
+  email             String    @unique
+  phone             String
+  passwordHash      String
+  status            String    @default("ACTIVE") // ACTIVE | SUSPENDED | DELETED
+  emailVerifiedAt   DateTime?
+  // Bumped to revoke every session (logout everywhere, suspension, password reset).
+  sessionVersion    Int       @default(0)
+  isDemo            Boolean   @default(false)
+  city              String?
+  // Approximate home area, used only to sort results. Never shown to other users.
+  lat               Float?
+  lng               Float?
+  // { sms: boolean, email: boolean, whatsapp: boolean }
+  notificationPrefs Json      @default("{\"sms\": true, \"email\": true, \"whatsapp\": false}")
+  locale            String    @default("en")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(now()) @updatedAt
+
+  roles               RoleAssignment[]
+  agentProfiles       AgentProfile[]
+  memberships         Membership[]
+  addresses           SavedAddress[]
+  authTokens          AuthToken[]
+  customerOrders      Order[]                   @relation("CustomerOrders")
+  measurementProfiles MeasurementProfile[]
+  customerAppointments Appointment[]            @relation("CustomerAppointments")
+  professionalAppointments Appointment[]        @relation("ProfessionalAppointments")
+  deliveries          DeliveryAssignment[]
+  notifications       Notification[]
+  reviews             Review[]
+  verificationApplications VerificationApplication[] @relation("Applicant")
+  messages            Message[]
+  disputesRaised      Dispute[]                 @relation("DisputeRaisedBy")
+  disputesAssigned    Dispute[]                 @relation("DisputeAssignee")
+  supportTickets      SupportTicket[]
+
+  @@index([status])
 }
 
-// A tailor, seamstress or sewing company.
-model Business {
+// Platform roles. Business roles live in Membership.
+model RoleAssignment {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        String // CUSTOMER | MEASURER | RIDER | ADMIN
+  // Admin only: USERS | VERIFY | CATALOGUE | ORDERS | DISPUTES | FINANCE | CONFIG | AUDIT | SUPER
+  permissions String[] @default([])
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, role])
+}
+
+// Measurement professional or delivery rider details.
+model AgentProfile {
   id                 String   @id @default(cuid())
-  ownerId            String   @unique
-  owner              User     @relation(fields: [ownerId], references: [id])
-  name               String
-  kind               String   // TAILOR | SEAMSTRESS | COMPANY
-  description        String   @default("")
-  phone              String
-  address            String
-  city               String
-  lat                Float
-  lng                Float
-  registrationNumber String   // Business registration (ORC) or Ghana Card number
-  verificationStatus String   @default("PENDING")
-  rating             Float    @default(0)
-  reviewCount        Int      @default(0)
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind               String // MEASURER | RIDER
+  verificationStatus String   @default("PENDING") // PENDING | VERIFIED | REJECTED | SUSPENDED
+  ghanaCardNumber    String?
+  experience         String   @default("")
+  vehicle            String? // riders: MOTORBIKE | CAR | BICYCLE | ON_FOOT
+  feeMinor           Int? // measurers: home-visit fee they charge
+  serviceLat         Float?
+  serviceLng         Float?
+  serviceRadiusKm    Int      @default(15)
+  available          Boolean  @default(true)
   createdAt          DateTime @default(now())
 
-  photos    BusinessPhoto[]
-  reviews   Review[]
-  materials Material[]
-  styles    BusinessStyle[]
-  orders    Order[]
+  @@unique([userId, kind])
 }
 
-// Global catalogue of outfit styles clients pick from.
-model Style {
-  id          String  @id @default(cuid())
-  name        String
-  category    String  // e.g. DRESS, KABA_AND_SLIT, SHIRT, SUIT, SMOCK
-  wearer      String  // WOMEN | MEN | UNISEX
-  description String
-  yardsNeeded Float   // Typical fabric needed
-  // Emoji shown when there is no photo.
-  icon        String
-  imageUrl    String?
-
-  businesses BusinessStyle[]
-  orders     Order[]
+model SavedAddress {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label       String
+  addressText String
+  lat         Float?
+  lng         Float?
+  createdAt   DateTime @default(now())
 }
 
-// Which styles a business sews, and their labour price for each.
-model BusinessStyle {
+model AuthToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   String // VERIFY_EMAIL | RESET_PASSWORD
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model RateLimit {
+  key         String   @id
+  count       Int
+  windowStart DateTime
+}
+
+// ───────────────────────────── Businesses ─────────────────────────────
+
+// A tailoring business, seamstress, sewing company and/or fabric seller (the "organisation").
+model Business {
+  id                    String   @id @default(cuid())
+  name                  String
+  slug                  String   @unique
+  kinds                 String[] // TAILOR | SEAMSTRESS | COMPANY | FABRIC_SELLER
+  description           String   @default("")
+  phone                 String
+  email                 String?
+  address               String
+  city                  String
+  lat                   Float
+  lng                   Float
+  serviceRadiusKm       Int      @default(15)
+  // { mon: "08:00-18:00", ..., sun: null }
+  operatingHours        Json     @default("{}")
+  // Garment category slugs this business sews.
+  skills                String[] @default([])
+  // Garments it can take on per week; used to judge availability.
+  capacityPerWeek       Int      @default(10)
+  offersWorkshopFitting Boolean  @default(true)
+  registrationNumber    String
+  verificationStatus    String   @default("PENDING") // PENDING | VERIFIED | REJECTED | SUSPENDED
+  rating                Float    @default(0) // average of published reviews, display only
+  reviewCount           Int      @default(0)
+  completedOrders       Int      @default(0)
+  isDemo                Boolean  @default(false)
+  // Mobile Money number payouts are sent to.
+  payoutPhone           String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @default(now()) @updatedAt
+
+  members      Membership[]
+  photos       BusinessPhoto[]
+  reviews      Review[]
+  materials    FabricListing[]
+  styles       BusinessStyle[]
+  orders       Order[]
+  quotations   Quotation[]
+  appointments Appointment[]
+  submittedStyles Style[] @relation("SubmittedStyles")
+  verificationApplications VerificationApplication[]
+
+  @@index([verificationStatus])
+  @@index([lat, lng])
+}
+
+model Membership {
   id         String   @id @default(cuid())
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  styleId    String
-  style      Style    @relation(fields: [styleId], references: [id])
-  price      Float    // Labour price in GHS
-  daysToMake Int      @default(7)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       String // OWNER | MANAGER | STAFF
+  createdAt  DateTime @default(now())
 
-  @@unique([businessId, styleId])
+  @@unique([businessId, userId])
+  @@index([userId])
 }
 
-// Fabric a business has in stock.
-model Material {
-  id          String   @id @default(cuid())
-  businessId  String
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  name        String
-  design      String   // KENTE | WAX_PRINT | LACE | BATIK | SMOCK_CLOTH | PLAIN
-  color       String   // CSS colour used for the swatch
-  pricePerYard Float
-  yardsInStock Float
-  imageUrl    String?
-  createdAt   DateTime @default(now())
+model VerificationApplication {
+  id           String    @id @default(cuid())
+  subjectType  String // BUSINESS | MEASURER | RIDER
+  applicantId  String
+  applicant    User      @relation("Applicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  businessId   String?
+  business     Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED | NEEDS_INFO
+  // Registration number, Ghana Card number, experience, etc.
+  details      Json      @default("{}")
+  // StoredFile ids (private).
+  documentIds  String[]  @default([])
+  reviewerId   String?
+  decisionNote String?
+  createdAt    DateTime  @default(now())
+  decidedAt    DateTime?
 
-  orders Order[]
+  @@index([status])
 }
 
-// Kind: SEW (style + fabric + tailoring) | FABRIC (fabric purchase only)
-// Status flow is defined in src/lib/constants.ts
-model Order {
-  id         String   @id @default(cuid())
-  kind       String   @default("SEW")
-  status     String   @default("PLACED")
-
-  clientId   String
-  client     User     @relation("ClientOrders", fields: [clientId], references: [id])
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id])
-  styleId    String?
-  style      Style?   @relation(fields: [styleId], references: [id])
-  materialId String?
-  material   Material? @relation(fields: [materialId], references: [id])
-  yards      Float    @default(0)
-  ownFabric  Boolean  @default(false)
-  notes      String   @default("")
-  budget     Float?
-
-  // Measurements: SELF (client entered) | HOME_VISIT | AT_SHOP
-  measurementMethod String?
-  measurementTime   DateTime?
-  measurements      String?   // JSON of measurement name -> inches
-  measurerId        String?
-  measurer          User?     @relation("MeasurerJobs", fields: [measurerId], references: [id])
-
-  // Fulfilment: DELIVERY | PICKUP
-  fulfilment  String  @default("PICKUP")
-  riderId     String?
-  rider       User?   @relation("RiderJobs", fields: [riderId], references: [id])
-
-  // Where the client is (for home visits and deliveries).
-  clientAddress String?
-  clientLat     Float?
-  clientLng     Float?
-
-  laborPrice     Float @default(0)
-  materialPrice  Float @default(0)
-  measurementFee Float @default(0)
-  deliveryFee    Float @default(0)
-  total          Float @default(0)
-
-  // Payment: UNPAID | PAID. The client pays once the tailor accepts.
-  paymentStatus String    @default("UNPAID")
-  paymentRef    String?   @unique
-  paidAt        DateTime?
-
-  review        Review?
-  payouts       Payout[]
-  notifications Notification[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// Portfolio photos a business shows on its public profile.
 model BusinessPhoto {
   id         String   @id @default(cuid())
   businessId String
@@ -172,49 +208,650 @@ model BusinessPhoto {
   createdAt  DateTime @default(now())
 }
 
-// A client's rating of a completed order.
-model Review {
-  id         String   @id @default(cuid())
-  orderId    String   @unique
-  order      Order    @relation(fields: [orderId], references: [id])
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id])
-  clientId   String
-  client     User     @relation(fields: [clientId], references: [id])
-  rating     Int      // 1-5
-  comment    String   @default("")
-  createdAt  DateTime @default(now())
+// ───────────────────────────── Catalogue ─────────────────────────────
+
+model GarmentCategory {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String  @default("")
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+  styles      Style[]
 }
 
-// In-app notification (also sent by SMS when an SMS provider is configured).
-model Notification {
+model Style {
+  id                    String          @id @default(cuid())
+  slug                  String          @unique
+  name                  String
+  categoryId            String
+  category              GarmentCategory @relation(fields: [categoryId], references: [id])
+  wearer                String // WOMEN | MEN | UNISEX | CHILDREN
+  occasions             String[]        @default([]) // EVERYDAY | WORK | CHURCH | WEDDING | FUNERAL | FESTIVAL | PARTY
+  description           String
+  complexity            String          @default("MODERATE") // SIMPLE | MODERATE | COMPLEX
+  indicativeLabourMinor Int?
+  // Typical fabric needed, in hundredths of a yard.
+  fabricQtyCenti        Int
+  measurementKeys       String[]        @default([])
+  icon                  String
+  imageUrl              String?
+  status                String          @default("PUBLISHED") // PUBLISHED | PENDING | REJECTED | ARCHIVED
+  submittedByBusinessId String?
+  submittedByBusiness   Business?       @relation("SubmittedStyles", fields: [submittedByBusinessId], references: [id])
+  createdAt             DateTime        @default(now())
+
+  options    StyleOption[]
+  businesses BusinessStyle[]
+  orders     Order[]
+
+  @@index([categoryId, status])
+}
+
+// Garment-specific design choices (sleeve, neckline, length, ...).
+model StyleOption {
   id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orderId   String?
-  order     Order?   @relation(fields: [orderId], references: [id])
-  message   String
-  link      String   @default("")
-  read      Boolean  @default(false)
+  styleId   String
+  style     Style    @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  key       String
+  label     String
+  choices   String[]
+  sortOrder Int      @default(0)
+
+  @@unique([styleId, key])
+}
+
+// A style a business sews, and its indicative labour price (null = price on request).
+model BusinessStyle {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  styleId    String
+  style      Style    @relation(fields: [styleId], references: [id])
+  priceMinor Int?
+  daysToMake Int      @default(7)
+
+  @@unique([businessId, styleId])
+}
+
+// ───────────────────────────── Fabric & inventory ─────────────────────────────
+
+model FabricListing {
+  id                 String   @id @default(cuid())
+  businessId         String
+  business           Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name               String
+  fabricType         String // KENTE | WAX_PRINT | LACE | BATIK | SMOCK_CLOTH | PLAIN
+  pattern            String   @default("")
+  color              String // CSS hex used for the swatch when there is no photo
+  colorName          String   @default("")
+  unit               String   @default("YARD") // YARD | METRE
+  pricePerUnitMinor  Int
+  qtyOnHandCenti     Int
+  qtyReservedCenti   Int      @default(0)
+  minOrderCenti      Int      @default(50)
+  widthInches        Int?
+  careNotes          String   @default("")
+  photos             String[] @default([])
+  status             String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
+
+  movements    InventoryMovement[]
+  reservations FabricReservation[]
+  orders       Order[]
+
+  @@index([businessId])
+  @@index([fabricType, status])
+}
+
+// Append-only stock ledger.
+model InventoryMovement {
+  id            String        @id @default(cuid())
+  listingId     String
+  listing       FabricListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  type          String // RESTOCK | ADJUST | RESERVE | RELEASE | DEDUCT
+  qtyCenti      Int // signed for ADJUST, positive otherwise
+  onHandAfter   Int
+  reservedAfter Int
+  orderId       String?
+  actorId       String?
+  note          String        @default("")
+  createdAt     DateTime      @default(now())
+
+  @@index([listingId, createdAt])
+}
+
+model FabricReservation {
+  id        String        @id @default(cuid())
+  listingId String
+  listing   FabricListing @relation(fields: [listingId], references: [id])
+  orderId   String
+  order     Order         @relation(fields: [orderId], references: [id])
+  qtyCenti  Int
+  status    String        @default("ACTIVE") // ACTIVE | RELEASED | CONSUMED
+  expiresAt DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([status, expiresAt])
+  @@index([orderId])
+}
+
+// ───────────────────────────── Orders ─────────────────────────────
+
+model Order {
+  id                  String    @id @default(cuid())
+  number              Int       @unique @default(autoincrement())
+  kind                String    @default("CUSTOM") // CUSTOM | FABRIC
+  status              String    @default("DRAFT")
+  previousStatus      String? // status before a dispute
+  paymentStatus       String    @default("UNPAID") // UNPAID | DEPOSIT_PAID | PAID | PARTIALLY_REFUNDED | REFUNDED
+  customerId          String
+  customer            User      @relation("CustomerOrders", fields: [customerId], references: [id])
+  // Set when a quotation is accepted (custom) or at creation (fabric).
+  businessId          String?
+  business            Business? @relation(fields: [businessId], references: [id])
+  styleId             String?
+  style               Style?    @relation(fields: [styleId], references: [id])
+  designChoices       Json      @default("{}")
+  instructions        String    @default("")
+  referenceFileIds    String[]  @default([])
+  fabricSource        String    @default("BUSINESS") // OWN | BUSINESS | SELLER
+  fabricListingId     String?
+  fabricListing       FabricListing? @relation(fields: [fabricListingId], references: [id])
+  fabricQtyCenti      Int       @default(0)
+  // Fabric order bought from an independent seller and delivered to this order's tailor.
+  parentOrderId       String?
+  parentOrder         Order?    @relation("FabricForOrder", fields: [parentOrderId], references: [id])
+  fabricOrders        Order[]   @relation("FabricForOrder")
+  budgetMinor         Int?
+  neededBy            DateTime?
+  measurementMethod   String? // SAVED | SELF | HOME_VISIT | AT_WORKSHOP
+  measurementRecordId String?
+  measurementRecord   MeasurementRecord? @relation(fields: [measurementRecordId], references: [id])
+  fulfilment          String    @default("UNDECIDED") // UNDECIDED | PICKUP | DELIVERY
+  addressText         String?
+  lat                 Float?
+  lng                 Float?
+  acceptedQuotationId String?   @unique
+  acceptedQuotation   Quotation? @relation("AcceptedQuotation", fields: [acceptedQuotationId], references: [id])
+  totalMinor          Int       @default(0)
+  depositMinor        Int       @default(0)
+  amountPaidMinor     Int       @default(0)
+  amountRefundedMinor Int       @default(0)
+  cancelReason        String?
+  // Hash of the code the customer shows when collecting (self-pickup). The code itself is never stored.
+  handoverCodeHash    String?
+  isDemo              Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  completedAt         DateTime?
+
+  quotations    Quotation[]
+  events        OrderEvent[]
+  reservations  FabricReservation[]
+  appointments  Appointment[]
+  deliveries    DeliveryAssignment[]
+  payments      Payment[]
+  refunds       Refund[]
+  review        Review?
+  disputes      Dispute[]
+  conversation  Conversation?
+  notifications Notification[]
+
+  @@index([customerId, createdAt])
+  @@index([businessId, status])
+  @@index([status])
+}
+
+model Quotation {
+  id             String    @id @default(cuid())
+  orderId        String
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  businessId     String
+  business       Business  @relation(fields: [businessId], references: [id])
+  // REQUESTED | SUBMITTED | ACCEPTED | DECLINED (by business) | REJECTED (by customer) | WITHDRAWN | EXPIRED | SUPERSEDED
+  status         String    @default("REQUESTED")
+  version        Int       @default(1)
+  revisionOfId   String?
+  totalMinor     Int       @default(0)
+  depositMinor   Int       @default(0)
+  completionDate DateTime?
+  fabricQtyCenti Int?
+  // Fabric from the business's own stock that this quotation uses (reserved when accepted).
+  fabricListingId String?
+  message        String    @default("")
+  validUntil     DateTime?
+  submittedById  String?
+  createdAt      DateTime  @default(now())
+  respondedAt    DateTime?
+
+  lines         QuotationLine[]
+  acceptedOrder Order?          @relation("AcceptedQuotation")
+
+  @@unique([orderId, businessId, version])
+  @@index([businessId, status])
+}
+
+model QuotationLine {
+  id          String    @id @default(cuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  // LABOUR | FABRIC | MEASUREMENT | DELIVERY | SERVICE_FEE | DISCOUNT | OTHER
+  kind        String
+  description String
+  amountMinor Int // negative for DISCOUNT
+  sortOrder   Int       @default(0)
+}
+
+// Audit trail for every order change.
+model OrderEvent {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type       String // STATUS | QUOTE | PAYMENT | NOTE | MEASUREMENT | DELIVERY | DISPUTE | ...
+  fromStatus String?
+  toStatus   String?
+  actorId    String?
+  actorRole  String // CUSTOMER | BUSINESS | MEASURER | RIDER | ADMIN | SYSTEM
+  note       String   @default("")
+  data       Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+// ───────────────────────────── Measurements & appointments ─────────────────────────────
+
+model MeasurementProfile {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  label     String // "Me", "My son Kojo", ...
   createdAt DateTime @default(now())
+  records   MeasurementRecord[]
+
+  @@index([ownerId])
+}
+
+model MeasurementRecord {
+  id            String             @id @default(cuid())
+  profileId     String
+  profile       MeasurementProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  revision      Int
+  // { chest: { value: 38, unit: "in" }, ... }
+  values        Json
+  source        String // SELF | PROFESSIONAL | WORKSHOP | IMPORTED
+  // DRAFT | SUBMITTED | CONFIRMED | SUPERSEDED
+  status        String             @default("SUBMITTED")
+  notes         String             @default("")
+  createdById   String
+  appointmentId String?
+  createdAt     DateTime           @default(now())
+  confirmedAt   DateTime?
+
+  orders Order[]
+
+  @@unique([profileId, revision])
+}
+
+model Appointment {
+  id             String    @id @default(cuid())
+  kind           String // HOME_VISIT | WORKSHOP
+  customerId     String
+  customer       User      @relation("CustomerAppointments", fields: [customerId], references: [id])
+  orderId        String?
+  order          Order?    @relation(fields: [orderId], references: [id])
+  businessId     String?
+  business       Business? @relation(fields: [businessId], references: [id])
+  professionalId String?
+  professional   User?     @relation("ProfessionalAppointments", fields: [professionalId], references: [id])
+  // Whose measurements are being taken (the customer's measurement profile).
+  profileId      String?
+  windowStart    DateTime
+  windowEnd      DateTime
+  addressText    String?
+  lat            Float?
+  lng            Float?
+  feeMinor       Int       @default(0)
+  // REQUESTED | ACCEPTED | COMPLETED | FAILED | CANCELLED
+  status         String    @default("REQUESTED")
+  failureReason  String?
+  notes          String    @default("")
+  reminderSentAt DateTime?
+  createdAt      DateTime  @default(now())
+  acceptedAt     DateTime?
+  completedAt    DateTime?
+
+  @@index([status, windowStart])
+  @@index([professionalId, windowStart])
+}
+
+// ───────────────────────────── Delivery ─────────────────────────────
+
+model DeliveryAssignment {
+  id             String    @id @default(cuid())
+  orderId        String
+  order          Order     @relation(fields: [orderId], references: [id])
+  leg            String // GARMENT_TO_CUSTOMER | FABRIC_TO_CUSTOMER | FABRIC_TO_TAILOR
+  // PENDING_PAYMENT (hidden from riders) | OPEN | ACCEPTED | PICKED_UP | IN_TRANSIT | DELIVERED | FAILED | CANCELLED
+  status         String    @default("OPEN")
+  riderId        String?
+  rider          User?     @relation(fields: [riderId], references: [id])
+  pickupName     String
+  pickupAddress  String
+  pickupLat      Float
+  pickupLng      Float
+  dropoffName    String
+  dropoffAddress String
+  dropoffLat     Float
+  dropoffLng     Float
+  feeMinor       Int
+  proofCodeHash  String
+  failureReason  String?
+  attempt        Int       @default(1)
+  createdAt      DateTime  @default(now())
+  acceptedAt     DateTime?
+  pickedUpAt     DateTime?
+  deliveredAt    DateTime?
+
+  @@index([status])
+  @@index([riderId, status])
+}
+
+// ───────────────────────────── Payments & accounting ─────────────────────────────
+
+model Payment {
+  id            String    @id @default(cuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id])
+  purpose       String // FULL | DEPOSIT | BALANCE | TOP_UP
+  amountMinor   Int
+  currency      String    @default("GHS")
+  provider      String // PAYSTACK | SANDBOX | LEGACY
+  providerRef   String    @unique
+  status        String    @default("PENDING") // PENDING | SUCCEEDED | FAILED | ABANDONED
+  failureReason String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  verifiedAt    DateTime?
+
+  refunds Refund[]
+
+  @@index([orderId])
+}
+
+// Webhook/verification events already processed (idempotency).
+model PaymentEvent {
+  id         String   @id @default(cuid())
+  provider   String
+  eventKey   String
+  type       String
+  receivedAt DateTime @default(now())
+
+  @@unique([provider, eventKey])
+}
+
+model Refund {
+  id            String    @id @default(cuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id])
+  paymentId     String?
+  payment       Payment?  @relation(fields: [paymentId], references: [id])
+  disputeId     String?
+  amountMinor   Int
+  reason        String
+  // REQUESTED | APPROVED | PROCESSING | SUCCEEDED | FAILED | REJECTED
+  status        String    @default("REQUESTED")
+  providerRef   String?
+  requestedById String
+  decidedById   String?
+  createdAt     DateTime  @default(now())
+  decidedAt     DateTime?
+  processedAt   DateTime?
+
+  @@index([status])
+}
+
+// Append-only double-entry style ledger. Each business event writes balanced entries.
+model LedgerEntry {
+  id             String   @id @default(cuid())
+  // CUSTOMER_FUNDS | PLATFORM_REVENUE | PARTNER_PAYABLE | REFUNDS | PAYOUTS
+  account        String
+  partyType      String? // BUSINESS | USER (for PARTNER_PAYABLE)
+  partyId        String?
+  orderId        String?
+  paymentId      String?
+  refundId       String?
+  payoutId       String?
+  // PAYMENT_RECEIVED | SETTLEMENT | COMMISSION | SERVICE_FEE | REFUND | PAYOUT | LEGACY
+  type           String
+  amountMinor    Int
+  idempotencyKey String   @unique
+  memo           String   @default("")
+  createdAt      DateTime @default(now())
+
+  @@index([account, partyType, partyId])
+  @@index([orderId])
+}
+
+model Payout {
+  id          String    @id @default(cuid())
+  partyType   String // BUSINESS | USER
+  partyId     String
+  amountMinor Int
+  method      String    @default("MOBILE_MONEY")
+  destination String // MoMo number
+  reference   String // provider/MoMo transaction id
+  status      String    @default("PAID")
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  @@index([partyType, partyId])
+}
+
+// V1 per-order payout rows, kept unchanged for the record. New balances live in LedgerEntry.
+model LegacyPayout {
+  id        String    @id
+  userId    String
+  orderId   String
+  role      String
+  amount    Float
+  status    String
+  reference String?
+  paidAt    DateTime?
+  createdAt DateTime
+}
+
+model PlatformSetting {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+// ───────────────────────────── Messaging & notifications ─────────────────────────────
+
+model Conversation {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  messages  Message[]
+  reads     ConversationRead[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id])
+  body           String
+  fileIds        String[]     @default([])
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model ConversationRead {
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  lastReadAt     DateTime
+
+  @@id([conversationId, userId])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId    String?
+  order      Order?   @relation(fields: [orderId], references: [id])
+  type       String   @default("GENERAL")
+  message    String
+  link       String   @default("")
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  deliveries NotificationDelivery[]
 
   @@index([userId, read])
 }
 
-// Money owed to a tailor, measurement agent or rider for a completed order.
-// Status: PENDING | PAID (admin marks paid after sending Mobile Money).
-model Payout {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id])
-  orderId   String
-  order     Order     @relation(fields: [orderId], references: [id])
-  role      String    // BUSINESS | MEASURER | RIDER
-  amount    Float
-  status    String    @default("PENDING")
-  reference String?   // Mobile Money transaction ID when paid
-  paidAt    DateTime?
-  createdAt DateTime  @default(now())
+model NotificationDelivery {
+  id                String       @id @default(cuid())
+  notificationId    String
+  notification      Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channel           String // SMS | EMAIL | WHATSAPP
+  // SENT (accepted by provider) | FAILED | SKIPPED (no provider configured / opted out)
+  status            String
+  providerMessageId String?
+  error             String?
+  createdAt         DateTime     @default(now())
+}
 
-  @@unique([orderId, userId])
+// Admin overrides of the built-in message wording.
+model NotificationTemplate {
+  key       String   @id
+  body      String
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// ───────────────────────────── Reviews, disputes, support ─────────────────────────────
+
+model Review {
+  id               String    @id @default(cuid())
+  orderId          String    @unique
+  order            Order     @relation(fields: [orderId], references: [id])
+  businessId       String
+  business         Business  @relation(fields: [businessId], references: [id])
+  customerId       String
+  customer         User      @relation(fields: [customerId], references: [id])
+  rating           Int
+  comment          String    @default("")
+  status           String    @default("PUBLISHED") // PUBLISHED | HIDDEN
+  businessResponse String?
+  respondedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  reports          ReviewReport[]
+}
+
+model ReviewReport {
+  id         String   @id @default(cuid())
+  reviewId   String
+  review     Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reporterId String
+  reason     String
+  status     String   @default("OPEN") // OPEN | UPHELD | DISMISSED
+  createdAt  DateTime @default(now())
+}
+
+model Dispute {
+  id              String    @id @default(cuid())
+  number          Int       @unique @default(autoincrement())
+  orderId         String
+  order           Order     @relation(fields: [orderId], references: [id])
+  raisedById      String
+  raisedBy        User      @relation("DisputeRaisedBy", fields: [raisedById], references: [id])
+  // MISSED_DEADLINE | WRONG_MEASUREMENTS | NOT_AS_AGREED | FABRIC_SUBSTITUTION | MISSING_OR_DAMAGED
+  // | DELIVERY_FAILURE | PRICE_CHANGE | PAYMENT | OTHER
+  category        String
+  description     String
+  // OPEN | UNDER_REVIEW | AWAITING_PARTY | RESOLVED | REJECTED
+  status          String    @default("OPEN")
+  assignedAdminId String?
+  assignedAdmin   User?     @relation("DisputeAssignee", fields: [assignedAdminId], references: [id])
+  // NONE | PARTIAL_REFUND | FULL_REFUND | REMAKE | OTHER
+  remedy          String?
+  resolution      String?
+  refundId        String?
+  createdAt       DateTime  @default(now())
+  resolvedAt      DateTime?
+  notes           DisputeNote[]
+
+  @@index([status])
+}
+
+model DisputeNote {
+  id        String   @id @default(cuid())
+  disputeId String
+  dispute   Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  authorId  String
+  body      String
+  fileIds   String[] @default([])
+  // Internal notes are visible to administrators only.
+  internal  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  orderId   String?
+  subject   String
+  status    String   @default("OPEN") // OPEN | ANSWERED | CLOSED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  messages  SupportMessage[]
+}
+
+model SupportMessage {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String
+  body      String
+  fromStaff Boolean       @default(false)
+  createdAt DateTime      @default(now())
+}
+
+// ───────────────────────────── Files & audit ─────────────────────────────
+
+model StoredFile {
+  id         String   @id @default(cuid())
+  ownerId    String?
+  visibility String // PUBLIC | PRIVATE
+  // STYLE | FABRIC | PORTFOLIO | REFERENCE | VERIFICATION | MESSAGE | DISPUTE
+  purpose    String
+  storageKey String   @unique
+  mime       String
+  size       Int
+  orderId    String?
+  createdAt  DateTime @default(now())
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  data       Json     @default("{}")
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
 }

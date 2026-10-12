@@ -6,4 +6,3 @@ node_modules
 next-env.d.ts
 *.tsbuildinfo
 /uploads
-prisma/schema.postgres.prisma
