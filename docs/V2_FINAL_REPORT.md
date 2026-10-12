@@ -162,6 +162,11 @@ See `docs/DEPLOYMENT.md`. In short: back up the Render database, rehearse the mi
 new environment variables, merge PR #2. The deploy runs migrations automatically. Then smoke-test `/api/health` and
 log in as the administrator. Set up a scheduler to call `/api/cron` every 15 minutes.
 
+The migration and rollback rehearsal runbook is `docs/MIGRATION_REHEARSAL.md`. It has been run end to end on a
+local stand-in for production, not yet on the real Render backup. Key findings:
+- After a successful migration, a code-only rollback to V1 fails; the database must be restored first.
+- Restoring with `pg_restore --clean` over the migrated database is unsafe.
+
 ## 12. Incomplete features and why
 
 - **Real payments:** the Paystack code is written but untested against Paystack (no account or key). It stays in sandbox until tested with Paystack test keys.

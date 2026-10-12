@@ -41,8 +41,8 @@ zero after recorded payouts.
 1. **Back up first.** Render dashboard → `tailorconnect-db` → Backups (paid plans), or from your machine:
    `pg_dump --format=custom "$EXTERNAL_DATABASE_URL" > ntoma-before-v2.dump`.
    Free Render databases have no automatic backups and expire after 30 days — upgrade before real use.
-2. Rehearse: restore that dump into a local database and run `DATABASE_URL=<local copy> node scripts/migrate.mjs`.
-   Check `/admin/finance` → "Run reconciliation" reports a balanced ledger.
+2. Rehearse on that dump, following `docs/MIGRATION_REHEARSAL.md` (`scripts/rehearsal/rehearse.sh <dump>` does
+   the database part). Don't merge until its evidence checklist (§8) is complete.
 3. Review the new environment variables in `render.yaml` (Render applies them on Blueprint sync):
    `PAYMENTS_MODE=sandbox`, `SEED_DEMO_DATA`, `STORAGE_DRIVER`, `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `S3_*`.
 4. Merge the pull request into `initial-web-app`. Render builds and deploys; watch the deploy log for
@@ -53,14 +53,19 @@ V1 sessions used a different cookie (`tc_session`), so everyone signs in again o
 
 ## Rolling back
 
-- **Code only (no migration ran or it failed):** Render → the service → Deploys → "Rollback" to the previous deploy.
-  A failing migration is rolled back as a whole by PostgreSQL. This was tested by making `0001_v2` fail on its last
-  statement against a V1 copy: no V2 table was created and the V1 tables were untouched. Prisma still records the
-  attempt as failed; before retrying, run
-  `DATABASE_URL=<production url> npx prisma migrate resolve --rolled-back 0001_v2`.
-- **After `0001_v2` has run:** V1 code can't read the V2 schema. Restore the backup taken in step 1
-  (`pg_restore --clean --no-owner -d "$EXTERNAL_DATABASE_URL" ntoma-before-v2.dump`), then roll back the code.
-  Anything written after the migration is lost, so decide quickly and announce a maintenance window.
+Full procedure, tested commands and what is still unverified on Render: `docs/MIGRATION_REHEARSAL.md` §5–§7.
+
+- **The migration failed:** nothing to restore. PostgreSQL rolls `0001_v2` back as a whole; this was tested for a
+  data error and for a failure after the last statement. V1 keeps working on that database: its `prisma db push`
+  reports "already in sync". Before retrying, fix the cause and run
+  `DATABASE_URL=<url> npx prisma migrate resolve --rolled-back 0001_v2`.
+- **The migration succeeded:** a code-only rollback does **not** work. V1's start command refuses to run against the
+  V2 schema (outage, no data loss), and the V1 app can't log anyone in. Restore the V1 backup **first**, into a new
+  database or an emptied `public` schema, then deploy V1, keeping V2 code from starting against the restored
+  database (it would migrate it again).
+  - **Never** use `pg_restore --clean` over the migrated database: tested, it fails or leaves a mixed state.
+  - **Never** use `prisma db push --force-reset` or `--accept-data-loss`.
+  - Anything written after the backup is lost unless re-entered from a dump of the V2 state.
 
 ## Scheduled jobs
 
