@@ -20,7 +20,7 @@ export default async function DemoPay({ searchParams }: { searchParams: Promise<
         <p className="text-4xl">📱</p>
         <h1 className="text-lg font-bold">Approve Mobile Money payment</h1>
         <p className="text-sm text-stone-600">
-          A prompt has been sent to <strong>{user.phone}</strong>. Pay <strong>{formatCedis(o.total)}</strong> to TailorConnect
+          A prompt has been sent to <strong>{user.phone}</strong>. Pay <strong>{formatCedis(o.total)}</strong> to Ntoma
           for your order with {o.business.name}.
         </p>
         <form action={confirmDemoPayment.bind(null, reference)}>

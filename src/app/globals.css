@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-50: #ecf8f2;
-  --color-brand-100: #d0eedf;
-  --color-brand-500: #138a62;
-  --color-brand-600: #0d7352;
-  --color-brand-700: #0a5c42;
+  --color-brand-50: #eef6f1;
+  --color-brand-100: #d6eadf;
+  --color-brand-500: #2e7d5b;
+  --color-brand-600: #1f5a42;
+  --color-brand-700: #14382a;
   --color-gold-100: #fbf0d3;
   --color-gold-400: #e9b630;
   --color-gold-500: #d49b12;
@@ -43,11 +43,4 @@ body {
 }
 @utility page-title {
   @apply text-2xl font-bold tracking-tight text-stone-900;
-}
-
-/* Decorative kente-style stripes for the landing hero. */
-.kente-band {
-  background:
-    repeating-linear-gradient(90deg, #e9b630 0 28px, #0d7352 28px 44px, #b8432f 44px 60px, #1c1917 60px 66px),
-    #e9b630;
 }

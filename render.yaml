@@ -1,4 +1,4 @@
-# Render Blueprint: creates the TailorConnect website and its PostgreSQL database.
+# Render Blueprint: creates the Ntoma website and its PostgreSQL database.
 # In Render: New + > Blueprint > pick this repository (or use the Deploy button in the README).
 databases:
   - name: tailorconnect-db
@@ -28,7 +28,7 @@ services:
       - key: ADMIN_PASSWORD
         generateValue: true
       - key: SMS_SENDER_ID
-        value: TailorConn
+        value: Ntoma
       - key: UPLOAD_DIR
         value: ./uploads
       # Leave these empty to run payments and SMS in demo mode. Add them later under Environment.

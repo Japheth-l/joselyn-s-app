@@ -11,10 +11,10 @@ type Decision = "VERIFIED" | "REJECTED";
 
 async function tellVerification(user: { id: string; phone: string }, decision: Decision, link: string) {
   const message = decision === "VERIFIED"
-    ? "Your account has been verified. You can now start working on TailorConnect."
-    : "We couldn't verify your account. Please contact TailorConnect support.";
+    ? "Your account has been verified. You can now start working on Ntoma."
+    : "We couldn't verify your account. Please contact Ntoma support.";
   await db.notification.create({ data: { userId: user.id, message, link } });
-  await sendSms(user.phone, `TailorConnect: ${message}`);
+  await sendSms(user.phone, `Ntoma: ${message}`);
 }
 
 export async function verifyBusiness(businessId: string, decision: Decision) {
@@ -44,7 +44,7 @@ export async function markPayoutPaid(payoutId: string, formData: FormData) {
   });
   const message = `We've sent you GH₵ ${p.amount.toFixed(2)} by Mobile Money (ref ${reference}).`;
   await db.notification.create({ data: { userId: p.userId, orderId: p.orderId, message, link: "/earnings" } });
-  await sendSms(p.user.phone, `TailorConnect: ${message}`);
+  await sendSms(p.user.phone, `Ntoma: ${message}`);
   revalidatePath("/admin/payouts");
 }
 

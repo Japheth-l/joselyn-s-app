@@ -14,7 +14,7 @@ export function appUrl() {
 }
 
 export function newReference(orderId: string) {
-  return `TC-${orderId}-${crypto.randomBytes(4).toString("hex")}`;
+  return `NT-${orderId}-${crypto.randomBytes(4).toString("hex")}`;
 }
 
 /** Start a Paystack checkout. Returns the page the client should be sent to. */

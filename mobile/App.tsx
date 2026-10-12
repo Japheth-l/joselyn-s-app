@@ -7,14 +7,14 @@ import { ActivityIndicator, BackHandler, Linking, Platform, Pressable, StyleShee
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView, type WebViewNavigation } from "react-native-webview";
 
-// The TailorConnect website this app shows. Set "extra.webUrl" in app.json to your live address.
-const WEB_URL = String(Constants.expoConfig?.extra?.webUrl ?? "https://tailorconnect.example.com").replace(/\/$/, "");
+// The Ntoma website this app shows. Set "extra.webUrl" in app.json to your live address.
+const WEB_URL = String(Constants.expoConfig?.extra?.webUrl ?? "https://ntoma.example.com").replace(/\/$/, "");
 const HOST = new URL(WEB_URL).host;
 
 // Pages that must open inside the app even though they're on another site (payment checkout).
 const IN_APP_HOSTS = [HOST, "checkout.paystack.com", "standard.paystack.co"];
 
-const GREEN = "#0d7352";
+const GREEN = "#14382a";
 
 export default function App() {
   const webview = useRef<WebView>(null);
@@ -43,7 +43,7 @@ export default function App() {
     return () => sub.remove();
   }, [canGoBack]);
 
-  // Phone calls, directions and other sites open in the right app instead of inside TailorConnect.
+  // Phone calls, directions and other sites open in the right app instead of inside Ntoma.
   const shouldLoad = useCallback((req: { url: string }) => {
     const url = req.url;
     if (url.startsWith("about:") || url.startsWith("data:") || url.startsWith("blob:")) return true;
@@ -69,7 +69,7 @@ export default function App() {
         {!online || failed ? (
           <View style={styles.center}>
             <Text style={styles.emoji}>📶</Text>
-            <Text style={styles.title}>{online ? "Couldn't load TailorConnect" : "You're offline"}</Text>
+            <Text style={styles.title}>{online ? "Couldn't load Ntoma" : "You're offline"}</Text>
             <Text style={styles.body}>Check your data or Wi-Fi connection, then try again.</Text>
             <Pressable style={styles.button} onPress={retry}>
               <Text style={styles.buttonText}>Try again</Text>
@@ -90,7 +90,7 @@ export default function App() {
               sharedCookiesEnabled
               allowsBackForwardNavigationGestures
               pullToRefreshEnabled
-              applicationNameForUserAgent="TailorConnectApp/1.0"
+              applicationNameForUserAgent="NtomaApp/1.0"
               setSupportMultipleWindows={false}
             />
             {loading && (

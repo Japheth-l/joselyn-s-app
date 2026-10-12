@@ -7,16 +7,17 @@ import { db } from "@/lib/db";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { logout } from "./actions/auth";
 import { RegisterServiceWorker } from "@/components/register-sw";
+import { LogoMark } from "@/components/logo";
 
 export const metadata: Metadata = {
-  title: "TailorConnect Ghana",
+  title: "Ntoma",
   description: "Find a tailor or seamstress near you, choose your style and fabric, and get it sewn and delivered.",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "TailorConnect", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Ntoma", statusBarStyle: "default" },
   icons: { icon: "/icon.svg", apple: "/icon-192.png" },
 };
 
-export const viewport: Viewport = { themeColor: "#0d7352", width: "device-width", initialScale: 1 };
+export const viewport: Viewport = { themeColor: "#14382a", width: "device-width", initialScale: 1 };
 
 const NAV: Record<Role, { href: string; label: string }[]> = {
   CLIENT: [
@@ -45,9 +46,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen">
         <header className="border-b border-stone-200 bg-white">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-            <Link href="/" className="flex items-center gap-2 text-lg font-extrabold text-brand-700">
-              <span aria-hidden className="grid h-8 w-8 place-items-center rounded-lg bg-gold-400 text-base">🧵</span>
-              TailorConnect
+            <Link href="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight text-brand-700">
+              <LogoMark className="h-9 w-9" />
+              Ntoma
             </Link>
             {role && (
               <nav className="flex flex-wrap gap-4 text-sm font-medium text-stone-600">

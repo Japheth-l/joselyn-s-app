@@ -10,7 +10,7 @@ export type OrderEvent =
 
 async function notify(user: { id: string; phone: string }, message: string, link: string, orderId: string, sms = true) {
   await db.notification.create({ data: { userId: user.id, orderId, message, link } });
-  if (sms) await sendSms(user.phone, `TailorConnect: ${message}`);
+  if (sms) await sendSms(user.phone, `Ntoma: ${message}`);
 }
 
 /** Tell verified agents of a role near a point that a new job is waiting. */

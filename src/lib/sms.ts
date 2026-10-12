@@ -24,7 +24,7 @@ export async function sendSms(phone: string, message: string) {
       method: "POST",
       headers: { "api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
-        sender: (process.env.SMS_SENDER_ID || "TailorConn").slice(0, 11),
+        sender: (process.env.SMS_SENDER_ID || "Ntoma").slice(0, 11),
         message,
         recipients: [toInternational(phone)],
       }),

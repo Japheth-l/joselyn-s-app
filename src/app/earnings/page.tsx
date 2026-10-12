@@ -22,7 +22,7 @@ export default async function EarningsPage() {
       </div>
       <p className="text-sm text-stone-600">
         We send your earnings by Mobile Money to <strong>{user.phone}</strong> after each order is completed.
-        {user.role === "BUSINESS" && ` TailorConnect keeps ${PLATFORM_COMMISSION * 100}% of the sewing and fabric price.`}
+        {user.role === "BUSINESS" && ` Ntoma keeps ${PLATFORM_COMMISSION * 100}% of the sewing and fabric price.`}
       </p>
       {payouts.length === 0 ? (
         <p className="card text-stone-600">No earnings yet. They appear here when your first order is completed.</p>

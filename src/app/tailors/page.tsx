@@ -16,7 +16,7 @@ export default async function TailorsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="page-title">Tailors & seamstresses near you</h1>
-        <p className="text-stone-600">All verified by TailorConnect.</p>
+        <p className="text-stone-600">All verified by Ntoma.</p>
       </div>
       <NearbyTailors
         home={home}

@@ -1,4 +1,4 @@
-# TailorConnect Ghana
+# Ntoma
 
 A web app that connects everyday Ghanaians with verified tailors, seamstresses and sewing companies near them.
 
@@ -74,7 +74,7 @@ The button reads [`render.yaml`](render.yaml), which creates a PostgreSQL databa
 
 1. **Hosting.** Any Node.js host works. Build with `npm run deploy:build` and start with `npm run deploy:start`. These use PostgreSQL through `DATABASE_URL` (local development keeps using SQLite). Set `APP_URL` to your web address and `ADMIN_PASSWORD` to a strong password.
 2. **Payments.** Create a [Paystack Ghana](https://paystack.com/gh) business account, complete their business verification, and put your secret key in `PAYSTACK_SECRET_KEY`. In the Paystack dashboard, set the webhook URL to `<APP_URL>/api/paystack/webhook`.
-3. **SMS.** Create an [Arkesel](https://arkesel.com) account, register a sender ID (e.g. `TailorConn`), and set `ARKESEL_API_KEY` and `SMS_SENDER_ID`.
+3. **SMS.** Create an [Arkesel](https://arkesel.com) account, register a sender ID (e.g. `Ntoma`), and set `ARKESEL_API_KEY` and `SMS_SENDER_ID`.
 4. **Photos.** Uploads are saved in `UPLOAD_DIR`. Use a persistent disk, or switch `src/lib/uploads.ts` to cloud storage such as S3 or Cloudflare R2.
 
 ## Tech

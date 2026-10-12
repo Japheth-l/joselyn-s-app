@@ -1,31 +1,31 @@
 {
   "expo": {
-    "name": "TailorConnect",
-    "slug": "tailorconnect",
+    "name": "Ntoma",
+    "slug": "ntoma",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": { "image": "./assets/icon.png", "resizeMode": "contain", "backgroundColor": "#0d7352" },
+    "splash": { "image": "./assets/icon.png", "resizeMode": "contain", "backgroundColor": "#ffffff" },
     "ios": {
-      "bundleIdentifier": "gh.tailorconnect.app",
+      "bundleIdentifier": "gh.ntoma.app",
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "TailorConnect uses your location to find tailors near you and to guide measurement agents and delivery riders to you.",
-        "NSCameraUsageDescription": "TailorConnect uses the camera so tailors can photograph their fabric and work.",
-        "NSPhotoLibraryUsageDescription": "TailorConnect lets tailors upload photos of their fabric and work."
+        "NSLocationWhenInUseUsageDescription": "Ntoma uses your location to find tailors near you and to guide measurement agents and delivery riders to you.",
+        "NSCameraUsageDescription": "Ntoma uses the camera so tailors can photograph their fabric and work.",
+        "NSPhotoLibraryUsageDescription": "Ntoma lets tailors upload photos of their fabric and work."
       }
     },
     "android": {
-      "package": "gh.tailorconnect.app",
-      "adaptiveIcon": { "foregroundImage": "./assets/icon.png", "backgroundColor": "#0d7352" },
+      "package": "gh.ntoma.app",
+      "adaptiveIcon": { "foregroundImage": "./assets/icon.png", "backgroundColor": "#ffffff" },
       "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "CAMERA"]
     },
     "plugins": [
-      ["expo-location", { "locationWhenInUsePermission": "TailorConnect uses your location to find tailors near you and to guide measurement agents and delivery riders to you." }]
+      ["expo-location", { "locationWhenInUsePermission": "Ntoma uses your location to find tailors near you and to guide measurement agents and delivery riders to you." }]
     ],
     "extra": {
-      "webUrl": "https://tailorconnect.example.com"
+      "webUrl": "https://ntoma.example.com"
     }
   }
 }

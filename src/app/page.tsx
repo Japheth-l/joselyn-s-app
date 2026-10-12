@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogoMark } from "@/components/logo";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
 import { ROLE_HOME, type Role } from "@/lib/constants";
@@ -40,8 +41,12 @@ export default async function Home() {
             <Link href="/signup?role=BUSINESS" className="btn-secondary px-6 py-3 text-base">I&apos;m a tailor</Link>
           </div>
         </div>
-        <div className="kente-band grid aspect-[4/3] place-items-center rounded-2xl text-8xl shadow-inner" aria-hidden>
-          <span className="rounded-2xl bg-white/90 p-6 shadow">🪡</span>
+        <div className="grid aspect-[4/3] place-items-center rounded-2xl bg-brand-700 p-8 text-white">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <LogoMark className="h-40 w-40 md:h-52 md:w-52" />
+            <p className="text-3xl font-extrabold tracking-tight">Ntoma</p>
+            <p className="text-sm text-brand-100"><em>ntoma</em> · &ldquo;cloth&rdquo; in Akan</p>
+          </div>
         </div>
       </section>
 
@@ -60,7 +65,7 @@ export default async function Home() {
       </section>
 
       <section>
-        <h2 className="mb-6 text-2xl font-bold">Work with TailorConnect</h2>
+        <h2 className="mb-6 text-2xl font-bold">Work with Ntoma</h2>
         <div className="grid gap-4 md:grid-cols-3">
           {ROLES.map((r) => (
             <div key={r.role} className="card flex flex-col">
