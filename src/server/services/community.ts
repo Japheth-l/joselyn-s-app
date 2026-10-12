@@ -202,7 +202,7 @@ export async function replyTicket(actor: Actor, ticketId: string, body: string) 
   if (t.status === "CLOSED") throw invalid("This request is closed. Open a new one.");
   await db.supportMessage.create({ data: { ticketId, authorId: actor.userId, body: z.string().trim().min(1).max(3000).parse(body), fromStaff: staff && t.userId !== actor.userId } });
   await db.supportTicket.update({ where: { id: ticketId }, data: { status: staff && t.userId !== actor.userId ? "ANSWERED" : "OPEN" } });
-  if (staff && t.userId !== actor.userId) await notify(t.userId, "support.reply", { subject: t.subject }, { link: `/support/tickets/${ticketId}` });
+  if (staff && t.userId !== actor.userId) await notify(t.userId, "support.reply", { subject: t.subject }, { link: `/support/${ticketId}` });
 }
 
 export async function closeTicket(actor: Actor, ticketId: string) {

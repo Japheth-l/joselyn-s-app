@@ -75,15 +75,17 @@ const optionSchema = z.object({
   key: z.string().trim().regex(/^[a-z][a-zA-Z0-9]*$/, "Use a short key like sleeve or neckline"),
   label: z.string().trim().min(2).max(40),
   choices: z.array(z.string().trim().min(1).max(40)).min(2, "Give at least two choices").max(15),
+  sortOrder: z.number().int().min(0).max(999).default(0),
 });
 
 export async function upsertStyleOption(actor: Actor, styleId: string, input: z.input<typeof optionSchema>) {
   requireAdmin(actor, "CATALOGUE");
   const o = optionSchema.parse(input);
+  if (!(await db.style.findUnique({ where: { id: styleId }, select: { id: true } }))) throw notFound("Style");
   await db.styleOption.upsert({
     where: { styleId_key: { styleId, key: o.key } },
     create: { styleId, ...o },
-    update: { label: o.label, choices: o.choices },
+    update: { label: o.label, choices: o.choices, sortOrder: o.sortOrder },
   });
 }
 

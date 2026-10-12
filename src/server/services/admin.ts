@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { VERIFICATION_LABELS } from "@/lib/enums";
+import { formatMoney, parseCedis } from "@/lib/money";
 import type { Actor } from "../actor";
 import { audit } from "../audit";
 import { requireAdmin } from "../authz";
 import { invalid, notFound } from "../errors";
 import { notify, notifyBusiness } from "../notifications";
 import { TEMPLATES, type TemplateKey } from "../notifications/templates";
+import { issueRefund } from "./payments";
 
 // ───────────── Verification ─────────────
 
@@ -179,4 +181,22 @@ export async function reconcile(actor: Actor) {
 
   await audit(actor.userId, "ledger.reconciled", { type: "Ledger", id: "all" }, { problems: problems.length });
   return { paidInMinor: paidIn, problems };
+}
+
+// ───────────── Refunds ─────────────
+
+/** A finance administrator refunds part or all of what an order has paid (outside a dispute). */
+export async function adminRefund(actor: Actor, orderId: string, amountCedis: string, reason: string) {
+  requireAdmin(actor, "FINANCE");
+  const why = reason.trim();
+  if (!why) throw invalid("Give a reason for the refund; it is kept in the audit log and shown on the order.");
+  const amountMinor = parseCedis(amountCedis);
+  if (!amountMinor || amountMinor <= 0) throw invalid("Enter the refund amount in cedis, e.g. 50 or 50.25.");
+  const order = await db.order.findUnique({ where: { id: orderId }, select: { id: true } });
+  if (!order) throw notFound("Order");
+  const refunds = await issueRefund({ orderId, amountMinor, reason: why.slice(0, 500), requestedById: actor.userId, decidedById: actor.userId });
+  await audit(actor.userId, "refund.admin_issue", { type: "Order", id: orderId }, { amountMinor, reason: why.slice(0, 500), refundIds: refunds.map((r) => r.id) });
+  // Re-read: processing may have completed, failed, or left a part for a manual Mobile Money refund.
+  const after = await db.refund.findMany({ where: { id: { in: refunds.map((r) => r.id) } }, select: { id: true, status: true, amountMinor: true } });
+  return { amount: formatMoney(amountMinor), refunds: after };
 }

@@ -164,10 +164,18 @@ export async function removeAddress(actor: Actor, id: string) {
   if (res.count === 0) throw notFound("Address");
 }
 
+const VEHICLES = ["MOTORBIKE", "CAR", "BICYCLE", "ON_FOOT"];
+function checkFee(feeCedis: number | undefined) {
+  if (feeCedis != null && !(Number.isFinite(feeCedis) && feeCedis >= 0 && feeCedis <= 10_000)) throw invalid("Enter a fee between GH₵ 0 and GH₵ 10,000.");
+}
+
 /** Add the measurement professional or rider role and open a verification application. */
 export async function applyAsAgent(actor: Actor, kind: "MEASURER" | "RIDER", input: { ghanaCardNumber: string; experience?: string; vehicle?: string; feeCedis?: number; serviceRadiusKm?: number }, documentIds: string[] = []) {
   if (actor.agents.some((a) => a.kind === kind)) throw conflict("You have already applied for this role.");
   const card = ghanaCard.parse(input.ghanaCardNumber).toUpperCase();
+  if (kind === "RIDER" && input.vehicle && !VEHICLES.includes(input.vehicle)) throw invalid("Choose how you travel.");
+  checkFee(input.feeCedis);
+  const radius = z.number().int().min(1, "Service radius must be 1–100 km").max(100, "Service radius must be 1–100 km").parse(input.serviceRadiusKm ?? 15);
   const user = await db.user.findUniqueOrThrow({ where: { id: actor.userId } });
   await db.$transaction(async (tx) => {
     await tx.roleAssignment.upsert({ where: { userId_role: { userId: actor.userId, role: kind } }, create: { userId: actor.userId, role: kind }, update: {} });
@@ -176,7 +184,7 @@ export async function applyAsAgent(actor: Actor, kind: "MEASURER" | "RIDER", inp
         userId: actor.userId, kind, ghanaCardNumber: card, experience: input.experience?.slice(0, 1000) ?? "",
         vehicle: kind === "RIDER" ? input.vehicle ?? "MOTORBIKE" : null,
         feeMinor: kind === "MEASURER" && input.feeCedis ? Math.round(input.feeCedis * 100) : null,
-        serviceLat: user.lat, serviceLng: user.lng, serviceRadiusKm: input.serviceRadiusKm ?? 15,
+        serviceLat: user.lat, serviceLng: user.lng, serviceRadiusKm: radius,
       },
     });
     await tx.verificationApplication.create({
@@ -187,6 +195,7 @@ export async function applyAsAgent(actor: Actor, kind: "MEASURER" | "RIDER", inp
 
 export async function updateAgentProfile(actor: Actor, kind: "MEASURER" | "RIDER", input: { available: boolean; serviceRadiusKm: number; feeCedis?: number; lat?: number; lng?: number }) {
   const radius = z.number().int().min(1).max(100).parse(input.serviceRadiusKm);
+  checkFee(input.feeCedis);
   const res = await db.agentProfile.updateMany({
     where: { userId: actor.userId, kind },
     data: {

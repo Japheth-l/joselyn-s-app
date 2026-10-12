@@ -102,8 +102,11 @@ export async function correctMeasurements(actor: Actor, appointmentId: string, v
   if (!reason.trim()) throw invalid("Explain what you're correcting.");
   if (!ap.order || !["AWAITING_MEASUREMENTS", "MEASUREMENTS_CONFIRMED"].includes(ap.order.status)) throw invalid("Sewing has started, so measurements can't be changed now. Contact the business.");
   checkRequired(values, ap.order.style?.measurementKeys ?? []);
+  // The visit may have used the customer's default profile (profileId empty): correct the same profile.
+  const profileId = ap.profileId ?? (await db.measurementRecord.findFirst({ where: { appointmentId, status: { not: "DRAFT" } }, orderBy: { revision: "desc" } }))?.profileId;
+  if (!profileId) throw invalid("The original measurements could not be found.");
   await db.$transaction(async (tx) => {
-    const rec = await addRecord(tx, { profileId: ap.profileId!, values, source: "PROFESSIONAL", status: "SUBMITTED", createdById: actor.userId, appointmentId, notes: `Correction: ${reason}` });
+    const rec = await addRecord(tx, { profileId, values, source: "PROFESSIONAL", status: "SUBMITTED", createdById: actor.userId, appointmentId, notes: `Correction: ${reason}` });
     await tx.order.update({ where: { id: ap.orderId! }, data: { measurementRecordId: rec.id } });
     await orderEvent(tx, ap.orderId!, "MEASUREMENT", actor.userId, "MEASURER", "Measurements corrected", { reason });
   });

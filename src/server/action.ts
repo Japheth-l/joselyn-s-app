@@ -1,4 +1,5 @@
 import "server-only";
+import { revalidatePath } from "next/cache";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { ZodError } from "zod";
 import type { Actor } from "./actor";
@@ -17,6 +18,8 @@ export async function run(fn: (actor: Actor) => Promise<string | void>): Promise
     const actor = await currentActor();
     if (!actor) return { error: "Please log in again." };
     const msg = await fn(actor);
+    // Pages read straight from the database; refresh them after any change.
+    revalidatePath("/", "layout");
     return { ok: msg || "Saved." };
   } catch (e) {
     if (isRedirectError(e)) throw e;

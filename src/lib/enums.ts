@@ -138,6 +138,7 @@ export const APPOINTMENT_STATUS = {
 } as const;
 
 export const DELIVERY_STATUS = {
+  PENDING_PAYMENT: "Waiting for payment",
   OPEN: "Waiting for a rider",
   ACCEPTED: "Rider assigned",
   PICKED_UP: "Picked up",
