@@ -6,7 +6,7 @@
 #   • the host is localhost/127.0.0.1/::1, or exactly equals $REHEARSAL_REMOTE_HOST (a separate Render
 #     rehearsal database you created for this purpose — never the production host)
 #   • the server confirms the same database name
-#   • SEED_DEMO_DATA is not "true" (scripts/migrate.mjs would seed an empty database)
+#   • SEED_ON_EMPTY is unset (scripts/migrate.mjs would seed an empty database)
 # Never prints the URL (it may contain a password).
 set -eu
 url="${1:-}"
@@ -22,7 +22,7 @@ case "$host" in
        echo "guard: host '$host' is not local; set REHEARSAL_REMOTE_HOST=$host only if it is a separate rehearsal database" >&2; exit 3
      fi ;;
 esac
-if [ "${SEED_DEMO_DATA:-}" = "true" ]; then echo "guard: unset SEED_DEMO_DATA before rehearsing" >&2; exit 3; fi
+if [ -n "${SEED_ON_EMPTY:-}" ]; then echo "guard: unset SEED_ON_EMPTY before rehearsing" >&2; exit 3; fi
 actual="$(psql "$url" -X -At -c 'select current_database()')"
 [ "$actual" = "$db" ] || { echo "guard: server reports database '$actual', expected '$db'" >&2; exit 3; }
 echo "guard: OK (database $db on $host)"

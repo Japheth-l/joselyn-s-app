@@ -1,5 +1,11 @@
 # V1 → V2 migration and rollback: rehearsal runbook
 
+> **Not needed for the planned launch (13 Oct 2026).** V1 held only demo data, so V2 launches on a new, empty database
+> (`docs/DEPLOYMENT.md`, "Launching V2 on a new database"), and `scripts/migrate.mjs` now refuses to convert a V1
+> database unless `ALLOW_V1_CONVERSION=true`. This runbook applies only if you later decide to convert a V1 database
+> in place. Its commands that run `migrate.mjs` against a V1 copy need `ALLOW_V1_CONVERSION=true`
+> (`scripts/rehearsal/rehearse.sh` sets it). The results below were recorded before the guard existed.
+
 **Purpose.** Prove, before merging PR #2, that:
 
 1. the V1 → V2 data migration is correct on a copy of the real production data; and
@@ -28,11 +34,13 @@ Nothing in this runbook writes to production. The only commands that touch the p
 
 `scripts/migrate.mjs` does three things, in order:
 
-1. If the `User` table exists but `_prisma_migrations` doesn't (a V1 database), it marks `0000_baseline` as applied.
-   This writes the `_prisma_migrations` table and nothing else.
+1. If the database holds V1 data, it stops unless `ALLOW_V1_CONVERSION=true`. With the flag, and if
+   `_prisma_migrations` doesn't exist, it marks `0000_baseline` as applied. That writes the `_prisma_migrations`
+   table and nothing else.
 2. It runs `npx prisma migrate deploy`, which applies `0001_v2`.
-3. If `SEED_DEMO_DATA=true`, it runs the seed. The seed exits immediately when any user exists.
-   `render.yaml` sets this to `true`. A rehearsal confirmed it adds nothing to a populated database.
+3. If `SEED_ON_EMPTY=catalogue-and-admin`, it runs the seed (catalogue and administrator only). The seed exits
+   immediately when any user exists. (When this runbook was rehearsed, the setting was `SEED_DEMO_DATA=true`, which
+   is now ignored.)
 
 `0000_baseline` is the V1 schema; it is never executed against production. `0001_v2` (about 1,200 lines) makes these changes:
 
@@ -131,7 +139,7 @@ row counts.
 ## 2. Restore the backup into a separate, empty rehearsal database
 
 Rehearsal database names **must** start with `ntoma_rh_`. `scripts/rehearsal/guard.sh` refuses any other name, any
-non-local host (unless you set `REHEARSAL_REMOTE_HOST`), and `SEED_DEMO_DATA=true`.
+non-local host (unless you set `REHEARSAL_REMOTE_HOST`), and a set `SEED_ON_EMPTY`.
 
 ```bash
 REH=postgresql://postgres@localhost:5432        # your local server; adjust user/port
@@ -176,7 +184,7 @@ Run it against a **fresh** restore, never against `ntoma_rh_v1`, which stays as 
 createdb --maintenance-db="$REH/postgres" ntoma_rh_migrated
 pg_restore --no-owner --no-acl --exit-on-error --dbname "$REH/ntoma_rh_migrated" "ntoma-v1-$STAMP.dump"
 scripts/rehearsal/guard.sh "$REH/ntoma_rh_migrated" \
-  && env -u SEED_DEMO_DATA DATABASE_URL="$REH/ntoma_rh_migrated" node scripts/migrate.mjs 2>&1 | tee migrate.log
+  && env -u SEED_ON_EMPTY ALLOW_V1_CONVERSION=true DATABASE_URL="$REH/ntoma_rh_migrated" node scripts/migrate.mjs 2>&1 | tee migrate.log
 ```
 
 How this makes sure the target is the rehearsal database:
@@ -186,8 +194,8 @@ How this makes sure the target is the rehearsal database:
 - `guard.sh` checks the name prefix and host, and asks the server for `current_database()`.
 - Prisma prints the target in its own log. Confirm `migrate.log` contains
   `Datasource "db": PostgreSQL database "ntoma_rh_migrated" … at "localhost:…"`. If it names anything else, stop.
-- `SEED_DEMO_DATA` is removed for the rehearsal. Production has it set to `true`; that was tested separately and
-  adds nothing to a populated database (section 10).
+- `SEED_ON_EMPTY` is removed for the rehearsal. The old `SEED_DEMO_DATA=true` was tested separately and added nothing
+  to a populated database (section 10). The seed it triggers now also skips a populated database.
 
 ---
 
@@ -314,7 +322,7 @@ Two tests, each on its own new `ntoma_rh_*` restore:
   pg_restore --no-owner --no-acl --exit-on-error --dbname "$REH/ntoma_rh_failcase" "ntoma-v1-$STAMP.dump"
   psql "$REH/ntoma_rh_failcase" -X -c "UPDATE \"Order\" SET measurements = '{\"chest\":\"36in\"}' WHERE id = (SELECT id FROM \"Order\" WHERE measurements IS NOT NULL LIMIT 1)"
   psql "$REH/ntoma_rh_failcase" -X -q -v ON_ERROR_STOP=1 -f scripts/rehearsal/table-fingerprints.sql > before.txt
-  scripts/rehearsal/guard.sh "$REH/ntoma_rh_failcase" && env -u SEED_DEMO_DATA DATABASE_URL="$REH/ntoma_rh_failcase" node scripts/migrate.mjs   # must fail
+  scripts/rehearsal/guard.sh "$REH/ntoma_rh_failcase" && env -u SEED_ON_EMPTY ALLOW_V1_CONVERSION=true DATABASE_URL="$REH/ntoma_rh_failcase" node scripts/migrate.mjs   # must fail
   psql "$REH/ntoma_rh_failcase" -X -q -v ON_ERROR_STOP=1 -f scripts/rehearsal/table-fingerprints.sql > after.txt
   diff before.txt after.txt          # expected: only a new _prisma_migrations line
   ```

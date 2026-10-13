@@ -50,7 +50,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-white focus:px-3 focus:py-2">Skip to content</a>
         {sandbox && (
           <div role="note" className="bg-gold-100 px-4 py-1.5 text-center text-xs font-medium text-amber-900">
-            Demo mode: payments are simulated and no real money moves. Listings marked “Demo” are examples, not real businesses.
+            Payments are in test mode: no real money moves, so an order shown as paid has not really been paid.
           </div>
         )}
         <header className="sticky top-0 z-40 border-b border-stone-200 bg-white/95 backdrop-blur">

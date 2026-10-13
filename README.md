@@ -43,7 +43,8 @@ npm run db:seed                 # style catalogue, an admin and demo data
 npm run dev                     # http://localhost:3000
 ```
 
-Local accounts after seeding (development only):
+Local accounts after seeding (local databases only: the seed refuses demo data, and the default administrator
+password, for any other database):
 
 | Email | Password | What it is |
 |---|---|---|

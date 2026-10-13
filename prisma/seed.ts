@@ -1,19 +1,24 @@
 // Seed data.
 //
-//   npm run db:seed              catalogue + administrator + clearly-marked demo data (development)
-//   tsx prisma/seed.ts --if-empty  (deploy, only with SEED_DEMO_DATA=true) does nothing if any user exists
+//   npm run db:seed                 catalogue + administrator + clearly-marked demo data (local databases only)
+//   tsx prisma/seed.ts --no-demo    catalogue + administrator
+//   --if-empty                      do nothing if any user exists (used on deploy, see scripts/migrate.mjs)
+//   --require-admin                 require ADMIN_EMAIL and ADMIN_PASSWORD even for a local database
 //
 // What is seeded:
 //   • The style catalogue (styles and their design options). This is real catalogue content, not activity.
-//   • One administrator, only if ADMIN_PASSWORD is set (in development a fixed local password is used).
-//   • Demo accounts and businesses, every one marked isDemo = true and shown with a "Demo listing" badge.
-//     No reviews, ratings, completed orders, payments or other activity are invented.
+//   • One administrator. For any database not on this machine, ADMIN_EMAIL and ADMIN_PASSWORD must be set
+//     (password of 12+ characters) or the script exits with an error before writing anything. The development
+//     defaults (admin@ntoma.example / local-admin-password) are used only for a local database.
+//   • Demo accounts and businesses, local databases only, every one marked isDemo = true and shown with a
+//     "Demo listing" badge. No reviews, ratings, completed orders, payments or other activity are invented.
 // Style "photos" are emoji icons; no fashion photographs are copied.
 import { PrismaClient, type Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { SeedRefused, adminCredentials, isLocalDatabase, type AdminCredentials } from "./seed-policy";
 
 const db = new PrismaClient();
-const production = process.env.NODE_ENV === "production";
+const flag = (name: string) => process.argv.includes(name);
 
 type StyleSeed = {
   slug: string; name: string; categoryId: string; wearer: string; occasions: string[]; description: string; complexity: string;
@@ -119,14 +124,11 @@ async function seedCatalogue() {
   console.log(`Catalogue: ${STYLES.length} styles.`);
 }
 
-async function seedAdmin() {
-  const email = (process.env.ADMIN_EMAIL || "admin@ntoma.example").toLowerCase();
-  const password = process.env.ADMIN_PASSWORD || (production ? "" : "local-admin-password");
-  if (!password) {
-    console.log("ADMIN_PASSWORD is not set: no administrator created. Set it and run the seed again.");
+async function seedAdmin({ email, password, source }: AdminCredentials) {
+  if (await db.user.findUnique({ where: { email } })) {
+    console.log(`Administrator ${email} already exists; left unchanged.`);
     return;
   }
-  if (await db.user.findUnique({ where: { email } })) return;
   await db.user.create({
     data: {
       name: "Platform administrator", email, phone: "0200000000", city: "Accra", lat: 5.6037, lng: -0.187, emailVerifiedAt: new Date(),
@@ -134,7 +136,7 @@ async function seedAdmin() {
       roles: { create: [{ role: "CUSTOMER" }, { role: "ADMIN", permissions: ["SUPER"] }] },
     },
   });
-  console.log(`Administrator: ${email}${process.env.ADMIN_PASSWORD ? " (password from ADMIN_PASSWORD)" : " / local-admin-password (development only)"}`);
+  console.log(`Administrator: ${email} (password: ${source === "environment" ? "from ADMIN_PASSWORD" : "local-admin-password, development only"})`);
 }
 
 async function seedDemo() {
@@ -190,18 +192,25 @@ async function seedDemo() {
 }
 
 async function main() {
-  if (process.argv.includes("--if-empty") && (await db.user.count()) > 0) {
+  const local = isLocalDatabase(process.env.DATABASE_URL);
+  const demo = !flag("--no-demo");
+  // Every check happens before anything is written.
+  if (demo && !local) {
+    throw new SeedRefused("Demo data is only seeded into a local database. Use --no-demo for any other database.");
+  }
+  if (flag("--if-empty") && (await db.user.count()) > 0) {
     console.log("Database already has users; skipping the seed.");
     return;
   }
+  const admin = adminCredentials(process.env, { explicitRequired: !local || flag("--require-admin") });
   await seedCatalogue();
-  await seedAdmin();
-  if (!process.argv.includes("--no-demo")) await seedDemo();
+  await seedAdmin(admin);
+  if (demo) await seedDemo();
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error(e instanceof SeedRefused ? e.message : e);
     process.exit(1);
   })
   .finally(() => db.$disconnect());

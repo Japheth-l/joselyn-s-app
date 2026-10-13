@@ -100,7 +100,12 @@ Details: `docs/V2_ARCHITECTURE.md`.
 
 ## 6. Tests run and their actual results
 
-- `npm test` (Vitest): **40 passed, 0 failed.**
+- `npm test` (Vitest): **86 passed, 0 failed** (13 Oct 2026).
+  - Launch path (`tests/integration/launch.test.ts`, 15 tests). Each runs the production start script on its own
+    new database: a first start creates exactly the catalogue and one administrator, with no demo data, even when
+    `SEED_DEMO_DATA=true` is set. Restarts change nothing. Missing or weak administrator credentials stop the start
+    before anything is written. A V1 database is refused unchanged without `ALLOW_V1_CONVERSION=true`.
+  - Seed policy and storage driver unit tests: what counts as a local database, credential rules, and S3 error handling.
   - The 14 server-side required scenarios run against a real PostgreSQL database.
   - Concurrency is tested directly: 10 simultaneous fabric orders, 3 concurrent duplicate webhooks.
   - Plus maintenance jobs and unit tests for matching, money, quantities, pricing and the state machine.
@@ -144,7 +149,7 @@ Details: `docs/V2_ARCHITECTURE.md`.
 ## 9. Environment variables and integrations
 
 - **Required:** `DATABASE_URL`, `AUTH_SECRET`.
-- **App:** `APP_URL`, `PAYMENTS_MODE`, `CRON_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_PASSWORD`, `SEED_DEMO_DATA`.
+- **App:** `APP_URL`, `PAYMENTS_MODE`, `CRON_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_PASSWORD` (local only), `SEED_ON_EMPTY`, `ALLOW_V1_CONVERSION`.
 - **Payments:** Paystack (`PAYSTACK_SECRET_KEY`, plus the webhook URL set in Paystack).
 - **SMS:** Arkesel (`ARKESEL_API_KEY`, `SMS_SENDER_ID`).
 - **Email:** Resend (`RESEND_API_KEY`, `EMAIL_FROM`).
@@ -158,14 +163,23 @@ See `README.md` → "Running it locally" (PostgreSQL, `.env`, `prisma migrate de
 
 ## 11. Deployment
 
-See `docs/DEPLOYMENT.md`. In short: back up the Render database, rehearse the migration on that backup, review the
-new environment variables, merge PR #2. The deploy runs migrations automatically. Then smoke-test `/api/health` and
-log in as the administrator. Set up a scheduler to call `/api/cron` every 15 minutes.
+See `docs/DEPLOYMENT.md`, "Launching V2 on a new database". V1 held only demo data, so V2 starts on a **new, empty,
+paid** Render database (`ntoma-db`) instead of converting V1's. The web service keeps its name (`tailorconnect`), so
+its URL doesn't change. The V1 database is left untouched, and rolling back means reverting the merge.
 
-The migration and rollback rehearsal runbook is `docs/MIGRATION_REHEARSAL.md`. It has been run end to end on a
-local stand-in for production, not yet on the real Render backup. Key findings:
-- After a successful migration, a code-only rollback to V1 fails; the database must be restored first.
-- Restoring with `pg_restore --clean` over the migrated database is unsafe.
+- The first start creates the schema, the 10 garment categories, the 15 catalogue styles and one administrator from
+  `ADMIN_EMAIL` / `ADMIN_PASSWORD`. It fails closed (the app doesn't start) if either is missing or the password is
+  weak. Demo users and businesses are never seeded outside a local database.
+- `scripts/migrate.mjs` refuses to convert a V1 database unless `ALLOW_V1_CONVERSION=true`, so a `DATABASE_URL`
+  still pointing at V1 stops the deploy instead of converting it.
+- Uploads need S3-compatible storage (Cloudflare R2 recommended). The local disk is wiped on every Render deploy.
+
+All of this is tested locally (`tests/integration/launch.test.ts`, plus a run of the production start command with
+an upload, a restart, and the file retrieved again from an S3 emulator). Nothing has been run on Render, and no real
+R2 bucket has been tested yet.
+
+The in-place conversion path and its rollback runbook (`docs/MIGRATION_REHEARSAL.md`) remain for reference. They
+were rehearsed on a local stand-in for V1 only.
 
 ## 12. Incomplete features and why
 
@@ -181,8 +195,8 @@ local stand-in for production, not yet on the real Render backup. Key findings:
 
 **Limitations:**
 - OpenStreetMap tiles aren't for heavy commercial use.
-- Local photo storage is wiped on Render free-plan redeploys.
-- Render's free database expires after 30 days and has no backups.
+- Local photo storage is wiped on every Render deploy and restart, so production needs R2 (or another S3 bucket).
+- The V2 database is on a paid plan. The old free V1 database expires 30 days after it was created.
 - Free web services sleep when idle (slow first load).
 - Matching uses straight-line distance, not road distance.
 - Delivery fees are a flat base plus a per-kilometre rate.
@@ -209,6 +223,6 @@ Expect roughly US$15–50 a month before SMS volume and transaction fees.
 2. Move to paid Render plans with database backups, and set up S3/R2 storage and a scheduler for `/api/cron`.
 3. Open Paystack, run the whole flow with test keys (deposit, balance, refund, webhook), then switch to live.
 4. Add Arkesel and Resend keys and register the SMS sender ID.
-5. Write a verification procedure for administrators (what documents, how to check Ghana Card/registration) and verify the first real businesses. Hide or remove demo businesses (`SEED_DEMO_DATA=false` for new databases, or suspend them).
+5. Write a verification procedure for administrators (what documents, how to check Ghana Card/registration) and verify the first real businesses. The new production database has no demo businesses.
 6. Run a small pilot with a few tailors and customers in one city; watch logs, reconciliation and disputes daily.
 7. Add a Content Security Policy, strip image metadata on upload, and run an accessibility check with a screen reader.

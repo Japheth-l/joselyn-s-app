@@ -44,6 +44,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:migrate": "prisma migrate deploy",
-    "db:migrate:dev": "prisma migrate dev"
+    "db:migrate:dev": "prisma migrate dev",
+    "storage:check": "tsx scripts/storage-check.ts"
   }
 }

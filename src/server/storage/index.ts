@@ -1,6 +1,6 @@
 import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 
 // File storage driver. STORAGE_DRIVER=local keeps files on disk (fine for development; NOT for hosts with
 // an ephemeral filesystem such as Render's free plan). STORAGE_DRIVER=s3 uses any S3-compatible bucket
@@ -37,14 +37,24 @@ const local = (): Storage => {
   };
 };
 
+// A missing object is "not found"; anything else (wrong credentials, bucket missing, network) is an error that
+// must surface in the logs rather than look like a deleted file.
+const isNotFound = (e: unknown) =>
+  e instanceof S3ServiceException && e.name !== "NoSuchBucket" && (e.name === "NoSuchKey" || e.$metadata?.httpStatusCode === 404);
+
 const s3 = (): Storage => {
-  const bucket = process.env.S3_BUCKET;
-  if (!bucket) throw new Error("S3_BUCKET is not set");
+  const missing = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"].filter((k) => !process.env[k]);
+  if (missing.length) throw new Error(`STORAGE_DRIVER=s3 but ${missing.join(", ")} not set`);
+  const bucket = process.env.S3_BUCKET!;
   const client = new S3Client({
     region: process.env.S3_REGION || "auto",
     endpoint: process.env.S3_ENDPOINT || undefined,
-    credentials: { accessKeyId: process.env.S3_ACCESS_KEY_ID ?? "", secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "" },
+    credentials: { accessKeyId: process.env.S3_ACCESS_KEY_ID!, secretAccessKey: process.env.S3_SECRET_ACCESS_KEY! },
     forcePathStyle: !!process.env.S3_ENDPOINT,
+    // Only send/verify checksums when an operation requires them. The SDK's newer default (always) adds
+    // headers that some S3-compatible services, Cloudflare R2 among them, have rejected or not returned.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
   return {
     async put(key, data, mime) {
@@ -54,8 +64,9 @@ const s3 = (): Storage => {
       try {
         const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
         return out.Body ? Buffer.from(await out.Body.transformToByteArray()) : null;
-      } catch {
-        return null;
+      } catch (e) {
+        if (isNotFound(e)) return null;
+        throw e;
       }
     },
     async remove(key) {
@@ -66,6 +77,15 @@ const s3 = (): Storage => {
 
 let instance: Storage | null = null;
 export function storage(): Storage {
-  if (!instance) instance = process.env.STORAGE_DRIVER === "s3" ? s3() : local();
+  if (!instance) {
+    const driver = process.env.STORAGE_DRIVER || "local";
+    if (driver !== "s3" && driver !== "local") throw new Error(`Unknown STORAGE_DRIVER "${driver}" (use "s3" or "local")`);
+    instance = driver === "s3" ? s3() : local();
+  }
   return instance;
+}
+
+/** Reset the cached driver (tests and scripts/storage-check.ts change the environment between runs). */
+export function resetStorageForTests() {
+  instance = null;
 }

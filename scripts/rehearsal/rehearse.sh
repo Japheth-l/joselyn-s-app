@@ -24,7 +24,7 @@ FAILURES=0
 
 cd "$ROOT"
 mkdir -p "$OUT"
-unset SEED_DEMO_DATA || true
+unset SEED_DEMO_DATA SEED_ON_EMPTY || true
 log() { printf '%s\n' "$*" | tee -a "$OUT/summary.txt"; }
 pass() { log "PASS  $*"; }
 fail() { log "FAIL  $*"; FAILURES=$((FAILURES + 1)); }
@@ -57,7 +57,7 @@ grep -q '|REVIEW$' "$OUT/04-preflight.txt" && log "NOTE  preflight items to revi
 newdb "${DB}_migrated"
 "$HERE/guard.sh" "$PG/${DB}_migrated" >> "$OUT/summary.txt"
 start=$(date +%s)
-if DATABASE_URL="$PG/${DB}_migrated" node scripts/migrate.mjs > "$OUT/05-migrate.log" 2>&1; then
+if ALLOW_V1_CONVERSION=true DATABASE_URL="$PG/${DB}_migrated" node scripts/migrate.mjs > "$OUT/05-migrate.log" 2>&1; then
   pass "migration applied in $(( $(date +%s) - start ))s (log names database: $(grep -m1 -o 'database "[^"]*"' "$OUT/05-migrate.log"))"
 else
   fail "migration failed, see 05-migrate.log"
