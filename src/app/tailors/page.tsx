@@ -1,32 +1,66 @@
-import { requireUser } from "@/lib/auth";
+import Link from "next/link";
 import { db } from "@/lib/db";
-import { CITIES } from "@/lib/constants";
-import { distanceKm } from "@/lib/geo";
-import { NearbyTailors } from "./nearby";
+import { BUSINESS_KINDS, CITIES } from "@/lib/enums";
+import { Empty, PageHeader } from "@/components/ui/basics";
+import { Directory } from "./directory";
 
-export default async function TailorsPage() {
-  const user = await requireUser("CLIENT");
-  const home = user.lat != null && user.lng != null ? { lat: user.lat, lng: user.lng } : CITIES.Accra;
+export const metadata = { title: "Tailors and sellers" };
+export const dynamic = "force-dynamic";
+
+export default async function TailorsPage({ searchParams }: { searchParams: Promise<{ city?: string; kind?: string; q?: string }> }) {
+  const sp = await searchParams;
   const businesses = await db.business.findMany({
-    where: { verificationStatus: "VERIFIED", styles: { some: {} } },
-    include: { styles: { include: { style: true } } },
+    where: {
+      verificationStatus: "VERIFIED",
+      ...(sp.city && sp.city in CITIES ? { city: sp.city } : {}),
+      ...(sp.kind && sp.kind in BUSINESS_KINDS ? { kinds: { has: sp.kind } } : {}),
+      ...(sp.q ? { name: { contains: sp.q, mode: "insensitive" } } : {}),
+    },
+    orderBy: [{ isDemo: "asc" }, { completedOrders: "desc" }, { name: "asc" }],
+    take: 200,
+    include: { photos: { take: 1, orderBy: { createdAt: "desc" } }, _count: { select: { styles: true, materials: { where: { status: "ACTIVE" } } } } },
   });
+  const center = sp.city && sp.city in CITIES ? CITIES[sp.city] : CITIES.Accra;
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="page-title">Tailors & seamstresses near you</h1>
-        <p className="text-stone-600">All verified by Ntoma.</p>
-      </div>
-      <NearbyTailors
-        home={home}
-        tailors={businesses.map((b) => ({
-          id: b.id, name: b.name, kind: b.kind, address: b.address, city: b.city, phone: b.phone, lat: b.lat, lng: b.lng, rating: b.rating, reviewCount: b.reviewCount,
-          styles: b.styles.map((s) => s.style.name),
-          fromPrice: Math.min(...b.styles.map((s) => s.price)),
-          homeKm: distanceKm(home.lat, home.lng, b.lat, b.lng),
-        }))}
-      />
+    <div>
+      <PageHeader title="Tailors, seamstresses and fabric sellers" subtitle="Every business here has been verified by our team." />
+      <form className="card mb-6 grid gap-3 sm:grid-cols-4" role="search">
+        <div>
+          <label className="label" htmlFor="q">Name</label>
+          <input id="q" name="q" defaultValue={sp.q} className="input" />
+        </div>
+        <div>
+          <label className="label" htmlFor="city">City</label>
+          <select id="city" name="city" defaultValue={sp.city ?? ""} className="input">
+            <option value="">All cities</option>
+            {Object.keys(CITIES).map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="kind">Type</label>
+          <select id="kind" name="kind" defaultValue={sp.kind ?? ""} className="input">
+            <option value="">All</option>
+            {Object.entries(BUSINESS_KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        <div className="flex items-end gap-2">
+          <button className="btn-primary flex-1">Filter</button>
+          <Link href="/tailors" className="btn-secondary">Clear</Link>
+        </div>
+      </form>
+      {businesses.length === 0 ? (
+        <Empty title="No verified businesses match yet">Try another city or type.</Empty>
+      ) : (
+        <Directory
+          center={center}
+          kindLabels={BUSINESS_KINDS}
+          entries={businesses.map((b) => ({
+            id: b.id, slug: b.slug, name: b.name, city: b.city, lat: b.lat, lng: b.lng, kinds: b.kinds, rating: b.rating, reviewCount: b.reviewCount,
+            completedOrders: b.completedOrders, styles: b._count.styles, fabrics: b._count.materials, isDemo: b.isDemo, photo: b.photos[0]?.url ?? null,
+          }))}
+        />
+      )}
     </div>
   );
 }

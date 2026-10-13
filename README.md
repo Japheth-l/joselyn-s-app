@@ -1,93 +1,86 @@
 # Ntoma
 
-A web app that connects everyday Ghanaians with verified tailors, seamstresses and sewing companies near them.
+A marketplace that connects people in Ghana with verified tailors, seamstresses, tailoring companies and fabric
+sellers near them, with measurement professionals and delivery riders to fill the gaps.
 
-A client picks a **style** and a **fabric design** and enters a **budget**. The app then recommends **verified tailors nearby** that fit the budget and shows them on a map. Next the client chooses how to be measured (enter their own measurements, book a **home visit from a measurement agent**, or go to the shop) and whether to have the outfit **delivered by a rider** or **pick it up**. Clients can also **buy fabric** on its own.
+A customer chooses a **style** and its details, says where the **fabric** comes from, how they'll be **measured**,
+their **budget** and **date**. Ntoma shows verified tailors nearby with an honest estimate and the reasons behind
+each match, and asks the chosen ones for **itemised quotes**. The customer accepts one, pays a deposit by Mobile
+Money or card, follows production step by step, and collects the outfit or has it delivered. Handover is confirmed
+with a one-time code.
 
-## User types
+## Who uses it
 
-| Role | What they can do |
+| Role | What they do |
 |---|---|
-| **Client** | Order outfits through the step-by-step wizard, buy fabric, find tailors on a map, track orders |
-| **Business** (tailor / seamstress / company) | Portal to manage fabric stock, the styles they sew and their prices, shop location, and incoming orders. Must be **verified** before clients can see them. |
-| **Measurement agent** | Sees home-visit jobs nearby, takes a job, visits the client and submits measurements to the tailor. Must be verified. |
-| **Delivery rider** | Sees finished orders ready for delivery nearby, picks up from the tailor and delivers. Must be verified. |
-| **Admin** | Verifies or suspends businesses, agents and riders |
+| **Customer** | Orders outfits, buys fabric, keeps measurement profiles for the family, pays, tracks, reviews, raises disputes |
+| **Business** (tailor, seamstress, company, fabric seller) | An organisation with owner, managers and staff. Quotes, production, fabric inventory with reservations, styles and prices, workshop visits, team, finance. Hidden from customers until verified |
+| **Measurement professional** | Accepts home visits nearby (customer details only after accepting), records measurements |
+| **Delivery rider** | Accepts deliveries, confirms handover with the customer's code |
+| **Administrator** | Permission-based: verifications, users, orders, disputes, refunds, payouts, catalogue, settings, message templates, reports, audit log |
 
-## Order journey
+One account can hold several roles.
+
+## Order lifecycle
 
 ```
-Placed → tailor accepts → client pays → Waiting for measurement* → Measurements received → Being sewn → Ready → Out for delivery* → Completed → client reviews
+Quote requested → Quoted → Awaiting payment → Awaiting measurements → Measurements confirmed → In production
+→ Quality check → Ready → (Delivery assigned → Picked up → In transit → Delivered | Collected) → Completed
 ```
-\* Skipped if the client entered their own measurements, or chose to pick up.
 
-At every step the people involved get an **in-app notification** (the 🔔 in the header) and an **SMS**.
-
-## Features
-
-- **Mobile Money payments.** Clients pay with MTN MoMo, Telecel Cash, AirtelTigo Money or card through [Paystack](https://paystack.com/gh), once the tailor accepts. No measuring, sewing or delivery starts until the order is paid.
-- **SMS and in-app notifications** for new orders, acceptance, payment, measurement visits, sewing, ready, on-the-way and delivered. SMS is sent through [Arkesel](https://arkesel.com). Agents and riders nearby get an SMS when a new job appears.
-- **Photos.** Tailors upload photos of their fabric and a portfolio of their work. The admin uploads photos for the style catalogue.
-- **Public tailor profiles** show photos, styles and prices, fabric in stock, a map and reviews.
-- **Ratings and reviews.** Clients rate the tailor (1–5 stars) after an order is completed, and the average appears on profiles and recommendations.
-- **Payouts.** When an order is completed, the app records what is owed. The tailor gets their sewing and fabric price minus a 10% platform commission, the measurement agent gets the visit fee, and the rider gets the delivery fee. Each partner sees this on an **Earnings** page. The admin sends Mobile Money, enters the transaction ID to mark the payout paid, and the partner gets an SMS.
-- **Mobile app.** The website can be installed on a phone's home screen. A native Android/iPhone app is in [`mobile/`](mobile/README.md).
+Side exits: Cancelled (before production, refunded per policy), Disputed (reviewed by an administrator), Refunded.
+Every change is checked against a transition table and recorded in the order's timeline.
 
 ## Running it locally
 
-Needs [Node.js](https://nodejs.org) 20 or newer.
+Needs Node.js 22 and PostgreSQL.
 
 ```bash
-npm install
-cp .env.example .env          # then set AUTH_SECRET to a long random string
-npm run setup                 # creates the database and loads demo data
-npm run dev                   # open http://localhost:3000
+cp .env.example .env            # set DATABASE_URL and AUTH_SECRET
+npm ci
+npx prisma migrate deploy
+npm run db:seed                 # style catalogue, an admin and demo data
+npm run dev                     # http://localhost:3000
 ```
 
-Without payment or SMS keys, the app runs in **demo mode**. Payments go through a pretend Mobile Money screen, and SMS messages are printed in the terminal instead of being sent.
+Local accounts after seeding (local databases only: the seed refuses demo data, and the default administrator
+password, for any other database):
 
-### Demo accounts (password: `password123`)
+| Email | Password | What it is |
+|---|---|---|
+| admin@ntoma.example | `local-admin-password` (or `ADMIN_PASSWORD`) | Administrator with every permission |
+| customer@demo.ntoma.example | `demo-password` (or `DEMO_PASSWORD`) | Demo customer |
+| business1@demo.ntoma.example … business5@… | same | Owners of the five demo businesses |
+| measurer@demo.ntoma.example, rider@demo.ntoma.example | same | Verified demo professionals |
 
-| Email | Role |
-|---|---|
-| client@demo.gh | Client |
-| business1@demo.gh | Auntie Ama's Stitches (verified seamstress, Accra) |
-| business6@demo.gh | New Style Stitches (waiting for verification) |
-| measurer@demo.gh | Measurement agent (verified) |
-| rider@demo.gh | Delivery rider (verified) |
-| rider2@demo.gh | Delivery rider (waiting for verification) |
-| admin@demo.gh | Admin |
+Demo records are flagged and shown with a "Demo listing" badge. No reviews, ratings or orders are invented.
 
-## Going live
+With `PAYMENTS_MODE=sandbox`, checkout goes to a clearly-labelled test page and no real money moves.
 
-### Deploy to Render
+## Tests
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Japheth-l/joselyn-s-app/tree/initial-web-app)
+```bash
+npm test            # Vitest: unit tests + integration tests against PostgreSQL (the 14 server-side required scenarios)
+npm run test:e2e    # Playwright at phone width against a running build (see docs/DEPLOYMENT.md)
+```
 
-The button reads [`render.yaml`](render.yaml), which creates a PostgreSQL database and the website (both on Render's free plan, in Frankfurt, the closest region to Ghana). The first start creates the tables and loads the demo data. Later deploys keep your data.
+## Deploying
 
-- Demo accounts use `password123`, **except the admin**. Its password is generated by Render: open the `tailorconnect` service → **Environment** → `ADMIN_PASSWORD`.
-- Leave `PAYSTACK_SECRET_KEY` and `ARKESEL_API_KEY` empty to stay in demo mode, and add them later under **Environment**.
-- Free plan limits: the site sleeps after 15 minutes without visitors, so the first visit after that takes about a minute to load. Uploaded photos are lost whenever the site restarts. Render's free database expires after 30 days. Upgrade the plans (and add a disk for `UPLOAD_DIR`) before real customers use it.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the Render setup, environment variables, scheduled jobs,
+going live with Paystack, backups and rollback.
 
-### Other hosts
+## Documentation
 
-1. **Hosting.** Any Node.js host works. Build with `npm run deploy:build` and start with `npm run deploy:start`. These use PostgreSQL through `DATABASE_URL` (local development keeps using SQLite). Set `APP_URL` to your web address and `ADMIN_PASSWORD` to a strong password.
-2. **Payments.** Create a [Paystack Ghana](https://paystack.com/gh) business account, complete their business verification, and put your secret key in `PAYSTACK_SECRET_KEY`. In the Paystack dashboard, set the webhook URL to `<APP_URL>/api/paystack/webhook`.
-3. **SMS.** Create an [Arkesel](https://arkesel.com) account, register a sender ID (e.g. `Ntoma`), and set `ARKESEL_API_KEY` and `SMS_SENDER_ID`.
-4. **Photos.** Uploads are saved in `UPLOAD_DIR`. Use a persistent disk, or switch `src/lib/uploads.ts` to cloud storage such as S3 or Cloudflare R2.
+- [docs/V2_AUDIT.md](docs/V2_AUDIT.md): what V1 had and what had to change
+- [docs/V2_ARCHITECTURE.md](docs/V2_ARCHITECTURE.md): data model, state machine, ledger, payments, matching, security
+- [docs/V2_IMPLEMENTATION_PLAN.md](docs/V2_IMPLEMENTATION_PLAN.md): progress, the test for each required scenario, decisions
+- [docs/UI_CONVENTIONS.md](docs/UI_CONVENTIONS.md): how pages, forms and actions are written
 
 ## Tech
 
-- [Next.js](https://nextjs.org) (React) with TypeScript and Tailwind CSS
-- [Prisma](https://www.prisma.io) database layer: SQLite locally, PostgreSQL for production
-- [Leaflet](https://leafletjs.com) + OpenStreetMap for maps (free, no API key)
-- Paystack for payments and Arkesel for SMS
-- [Expo](https://expo.dev) (React Native) for the mobile app
-
-## Possible next steps
-
-- Automatic payouts through Paystack Transfers, instead of the admin sending Mobile Money by hand
-- WhatsApp notifications
-- Refunds and disputes
-- Chat between a client and their tailor
+- [Next.js](https://nextjs.org) (App Router, server actions), React 19, TypeScript, Tailwind CSS
+- [Prisma](https://www.prisma.io) + PostgreSQL with versioned migrations
+- [Paystack](https://paystack.com/gh) payments, [Arkesel](https://arkesel.com) SMS, [Resend](https://resend.com) email, S3-compatible storage
+- [Leaflet](https://leafletjs.com) with OpenStreetMap tiles
+- Vitest and Playwright
+- A native wrapper app in [`mobile/`](mobile/README.md) (Expo)

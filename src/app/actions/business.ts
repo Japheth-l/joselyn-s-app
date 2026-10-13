@@ -1,127 +1,240 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { z } from "zod";
-import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { CITIES, FABRIC_DESIGNS } from "@/lib/constants";
-import { saveImage } from "@/lib/uploads";
+import { redirect } from "next/navigation";
+import { run, type ActionResult } from "@/server/action";
+import { bool, list, optNum, optStr, str } from "@/server/forms";
+import { publicUrl, saveUpload, saveUploads } from "@/server/files";
+import { invalid } from "@/server/errors";
+import * as businesses from "@/server/services/businesses";
+import * as catalogue from "@/server/services/catalogue";
+import * as orders from "@/server/services/orders";
+import * as community from "@/server/services/community";
+import { parseMeasurementForm } from "@/server/services/measurements";
 
-export type ActionState = { error?: string; ok?: string } | undefined;
+// Business portal actions. Ids come from hidden inputs; every service re-checks membership and role.
 
-async function myBusiness() {
-  const user = await requireUser("BUSINESS");
-  if (!user.business) throw new Error("No business profile found for this account.");
-  return user.business;
-}
+const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+const bizId = (fd: FormData) => str(fd, "businessId");
+const orderId = (fd: FormData) => str(fd, "orderId");
+const listingId = (fd: FormData) => str(fd, "listingId");
+const memberRole = (fd: FormData) => (str(fd, "role") === "MANAGER" ? "MANAGER" : "STAFF");
 
-const profileSchema = z.object({
-  name: z.string().trim().min(2, "Enter your business name"),
-  description: z.string().trim().max(500),
-  phone: z.string().trim().regex(/^\+?[0-9 ]{9,15}$/, "Enter a valid phone number"),
-  address: z.string().trim().min(3, "Enter your shop address"),
-  city: z.string().refine((c) => c in CITIES, "Choose a city"),
-  lat: z.coerce.number().min(-90).max(90),
-  lng: z.coerce.number().min(-180).max(180),
-});
+// ── Registration, profile, verification ──
 
-export async function updateProfile(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const b = await myBusiness();
-  const parsed = profileSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
-  await db.business.update({ where: { id: b.id }, data: parsed.data });
-  revalidatePath("/business", "layout");
-  return { ok: "Profile saved." };
-}
-
-const materialSchema = z.object({
-  name: z.string().trim().min(2, "Enter a fabric name"),
-  design: z.enum(Object.keys(FABRIC_DESIGNS) as [string, ...string[]]),
-  color: z.string().regex(/^#[0-9a-f]{6}$/i),
-  pricePerYard: z.coerce.number().positive("Enter a price per yard"),
-  yardsInStock: z.coerce.number().min(0, "Stock can't be negative"),
-});
-
-export async function addMaterial(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const b = await myBusiness();
-  const parsed = materialSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
-  let imageUrl: string | null;
-  try {
-    imageUrl = await saveImage(formData.get("photo"));
-  } catch (e) {
-    return { error: (e as Error).message };
-  }
-  await db.material.create({ data: { ...parsed.data, imageUrl, businessId: b.id } });
-  revalidatePath("/business/stock");
-  return { ok: `Added ${parsed.data.name}.` };
-}
-
-export async function setMaterialPhoto(materialId: string, formData: FormData) {
-  const b = await myBusiness();
-  const imageUrl = await saveImage(formData.get("photo"));
-  if (imageUrl) await db.material.updateMany({ where: { id: materialId, businessId: b.id }, data: { imageUrl } });
-  revalidatePath("/business/stock");
-}
-
-export async function addPortfolioPhoto(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const b = await myBusiness();
-  try {
-    const url = await saveImage(formData.get("photo"));
-    if (!url) return { error: "Choose a photo first." };
-    const caption = String(formData.get("caption") ?? "").trim().slice(0, 200);
-    await db.businessPhoto.create({ data: { businessId: b.id, url, caption } });
-  } catch (e) {
-    return { error: (e as Error).message };
-  }
-  revalidatePath("/business/photos");
-  return { ok: "Photo added." };
-}
-
-export async function removePortfolioPhoto(photoId: string) {
-  const b = await myBusiness();
-  await db.businessPhoto.deleteMany({ where: { id: photoId, businessId: b.id } });
-  revalidatePath("/business/photos");
-}
-
-export async function updateStock(materialId: string, formData: FormData) {
-  const b = await myBusiness();
-  const data = z.object({
-    pricePerYard: z.coerce.number().positive(),
-    yardsInStock: z.coerce.number().min(0),
-  }).parse(Object.fromEntries(formData));
-  await db.material.updateMany({ where: { id: materialId, businessId: b.id }, data });
-  revalidatePath("/business/stock");
-}
-
-export async function removeMaterial(materialId: string) {
-  const b = await myBusiness();
-  const used = await db.order.count({ where: { materialId } });
-  if (used > 0) {
-    // Keep the record for past orders; just take it off sale.
-    await db.material.updateMany({ where: { id: materialId, businessId: b.id }, data: { yardsInStock: 0 } });
-  } else {
-    await db.material.deleteMany({ where: { id: materialId, businessId: b.id } });
-  }
-  revalidatePath("/business/stock");
-}
-
-export async function setStyleOffer(styleId: string, formData: FormData) {
-  const b = await myBusiness();
-  const { price, daysToMake } = z.object({
-    price: z.coerce.number().positive(),
-    daysToMake: z.coerce.number().int().min(1).max(90),
-  }).parse(Object.fromEntries(formData));
-  await db.businessStyle.upsert({
-    where: { businessId_styleId: { businessId: b.id, styleId } },
-    create: { businessId: b.id, styleId, price, daysToMake },
-    update: { price, daysToMake },
+export async function createBusinessAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  let id = "";
+  const res = await run(async (actor) => {
+    const input = {
+      name: str(fd, "name"), kinds: list(fd, "kinds"), description: str(fd, "description"), phone: str(fd, "phone"), email: str(fd, "email"),
+      address: str(fd, "address"), city: str(fd, "city"), lat: optNum(fd, "lat"), lng: optNum(fd, "lng"), registrationNumber: str(fd, "registrationNumber"),
+    };
+    // Check the form before storing any documents.
+    businesses.businessSchema.parse(input);
+    const docs = await saveUploads(actor, fd.getAll("documents"), { purpose: "VERIFICATION", allowPdf: true }, 5);
+    id = (await businesses.createBusiness(actor, input, docs.map((d) => d.id))).id;
   });
-  revalidatePath("/business/styles");
+  if (id) redirect(`/biz/${id}?created=1`);
+  return res;
 }
 
-export async function removeStyleOffer(styleId: string) {
-  const b = await myBusiness();
-  await db.businessStyle.deleteMany({ where: { businessId: b.id, styleId } });
-  revalidatePath("/business/styles");
+export async function updateProfileAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const hours: Record<string, string> = {};
+    for (const d of DAYS) {
+      const v = str(fd, `hours_${d}`);
+      if (v) hours[d] = v;
+    }
+    await businesses.updateBusinessProfile(a, bizId(fd), {
+      name: str(fd, "name"), kinds: list(fd, "kinds"), description: str(fd, "description"), phone: str(fd, "phone"), email: str(fd, "email"),
+      address: str(fd, "address"), city: str(fd, "city"), lat: optNum(fd, "lat"), lng: optNum(fd, "lng"),
+      serviceRadiusKm: Number(str(fd, "serviceRadiusKm")), capacityPerWeek: Number(str(fd, "capacityPerWeek")), offersWorkshopFitting: bool(fd, "offersWorkshopFitting"),
+      skills: list(fd, "skills"), operatingHours: hours, payoutPhone: str(fd, "payoutPhone"),
+    });
+    return "Profile saved.";
+  });
+}
+
+export async function addPortfolioPhotoAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const file = await saveUpload(a, fd.get("photo"), { purpose: "PORTFOLIO" });
+    if (!file) throw invalid("Choose a photo to upload.");
+    await businesses.addPortfolioPhoto(a, bizId(fd), publicUrl(file), str(fd, "caption"));
+    return "Photo added.";
+  });
+}
+
+export async function removePortfolioPhotoAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await businesses.removePortfolioPhoto(a, bizId(fd), str(fd, "photoId")); return "Photo removed."; });
+}
+
+export async function resubmitVerificationAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const docs = await saveUploads(a, fd.getAll("documents"), { purpose: "VERIFICATION", allowPdf: true }, 5);
+    await businesses.resubmitVerification(a, bizId(fd), str(fd, "note"), docs.map((d) => d.id));
+    return "Sent for review. We'll let you know the decision.";
+  });
+}
+
+// ── Team ──
+
+export async function addMemberAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await businesses.addMember(a, bizId(fd), str(fd, "email"), memberRole(fd)); return "Member added."; });
+}
+export async function changeMemberRoleAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await businesses.changeMemberRole(a, bizId(fd), str(fd, "membershipId"), memberRole(fd)); return "Role updated."; });
+}
+export async function removeMemberAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await businesses.removeMember(a, bizId(fd), str(fd, "membershipId")); return "Member removed."; });
+}
+
+// ── Styles ──
+
+export async function setStyleOfferAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    await businesses.setStyleOffer(a, bizId(fd), str(fd, "styleId"), { price: str(fd, "price"), daysToMake: Number(str(fd, "daysToMake")) });
+    return "Saved.";
+  });
+}
+export async function removeStyleOfferAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await businesses.removeStyleOffer(a, bizId(fd), str(fd, "styleId")); return "Removed from your styles."; });
+}
+
+export async function submitStyleAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const businessId = bizId(fd);
+    const photo = await saveUpload(a, fd.get("photo"), { purpose: "STYLE" });
+    await catalogue.createStyle(
+      a,
+      {
+        name: str(fd, "name"), categoryId: str(fd, "categoryId"), wearer: str(fd, "wearer"), occasions: list(fd, "occasions"),
+        description: str(fd, "description"), complexity: str(fd, "complexity"), indicativeLabour: optStr(fd, "indicativeLabour"),
+        fabricYards: str(fd, "fabricYards"), measurementKeys: list(fd, "measurementKeys"), icon: optStr(fd, "icon"),
+        imageUrl: photo ? publicUrl(photo) : null,
+      },
+      businessId,
+    );
+    return "Design submitted. It will appear in the catalogue after review.";
+  });
+}
+
+// ── Inventory ──
+
+export async function createListingAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const photos = await saveUploads(a, fd.getAll("photos"), { purpose: "FABRIC" }, 4);
+    await catalogue.createListing(
+      a,
+      bizId(fd),
+      {
+        name: str(fd, "name"), fabricType: str(fd, "fabricType"), pattern: str(fd, "pattern"), color: str(fd, "color"), colorName: str(fd, "colorName"),
+        unit: str(fd, "unit") === "METRE" ? "METRE" : "YARD", price: str(fd, "price"), quantity: str(fd, "quantity"), minOrder: optStr(fd, "minOrder"),
+        widthInches: optNum(fd, "widthInches"), careNotes: str(fd, "careNotes"),
+      },
+      photos.map(publicUrl),
+    );
+    return "Fabric added.";
+  });
+}
+
+export async function updateListingAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    await catalogue.updateListing(a, listingId(fd), {
+      price: str(fd, "price"), status: str(fd, "status") === "INACTIVE" ? "INACTIVE" : "ACTIVE", name: optStr(fd, "name"), careNotes: str(fd, "careNotes"),
+    });
+    return "Listing saved.";
+  });
+}
+
+export async function changeStockAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const type = str(fd, "type") === "ADJUST" ? "ADJUST" : "RESTOCK";
+    if (type === "RESTOCK" && str(fd, "change").startsWith("-")) throw invalid("A restock adds fabric. Use a correction to reduce stock.");
+    await catalogue.changeStock(a, listingId(fd), { change: str(fd, "change"), type, note: str(fd, "note") });
+    return "Stock updated.";
+  });
+}
+
+export async function addListingPhotoAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const file = await saveUpload(a, fd.get("photo"), { purpose: "FABRIC" });
+    if (!file) throw invalid("Choose a photo to upload.");
+    await catalogue.addListingPhoto(a, listingId(fd), publicUrl(file));
+    return "Photo added.";
+  });
+}
+
+export async function removeListingAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await catalogue.removeListing(a, listingId(fd)); return "Listing deactivated. Customers no longer see it."; });
+}
+
+// ── Orders ──
+
+function quoteInput(fd: FormData) {
+  return {
+    labour: str(fd, "labour"), fabricListingId: optStr(fd, "fabricListingId"), fabricQty: optStr(fd, "fabricQty"), otherAmount: optStr(fd, "otherAmount"),
+    otherDescription: optStr(fd, "otherDescription"), discount: optStr(fd, "discount"), completionDate: str(fd, "completionDate"),
+    depositPercent: optNum(fd, "depositPercent"), message: str(fd, "message"),
+  };
+}
+
+export async function submitQuoteAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await orders.submitQuote(a, str(fd, "quotationId"), quoteInput(fd)); return "Quote sent to the customer."; });
+}
+
+export async function declineQuoteAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await orders.declineQuoteRequest(a, str(fd, "quotationId"), str(fd, "reason")); return "Request declined."; });
+}
+
+export async function fabricOrderRespondAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const confirm = str(fd, "decision") === "confirm";
+    await orders.sellerRespondFabricOrder(a, orderId(fd), confirm, str(fd, "reason"));
+    return confirm ? "Confirmed. The customer has been asked to pay." : "Order declined and the fabric released.";
+  });
+}
+
+const ADVANCE = ["MEASUREMENTS_CONFIRMED", "AWAITING_MEASUREMENTS", "IN_PRODUCTION", "QUALITY_CHECK", "READY"] as const;
+type Advance = (typeof ADVANCE)[number];
+
+export async function advanceOrderAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const to = str(fd, "to");
+    if (!ADVANCE.includes(to as Advance)) throw invalid("Choose a valid next step.");
+    await orders.businessAdvance(a, orderId(fd), to as Advance, str(fd, "note"));
+    return "Order updated.";
+  });
+}
+
+export async function workshopMeasurementsAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const unit = str(fd, "unit") === "cm" ? "cm" : "in";
+    await orders.recordWorkshopMeasurements(a, orderId(fd), parseMeasurementForm(fd, unit), str(fd, "notes"));
+    return "Measurements saved and confirmed.";
+  });
+}
+
+export async function proposeRevisionAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    await orders.proposeRevision(a, orderId(fd), { ...quoteInput(fd), reason: str(fd, "reason") });
+    return "Change sent. Nothing changes unless the customer approves it.";
+  });
+}
+
+export async function markCollectedAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await orders.markCollected(a, orderId(fd), str(fd, "code")); return "Handed over. The customer has been asked to confirm."; });
+}
+
+export async function businessCancelOrderAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => {
+    const reason = str(fd, "reason");
+    if (!reason) throw invalid("Tell the customer why you're cancelling.");
+    await orders.cancelOrder(a, orderId(fd), reason);
+    return "Order cancelled.";
+  });
+}
+
+// ── Reviews ──
+
+export async function respondToReviewAction(_: ActionResult, fd: FormData) {
+  return run(async (a) => { await community.respondToReview(a, str(fd, "reviewId"), str(fd, "response")); return "Response published."; });
 }

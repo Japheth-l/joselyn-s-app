@@ -1,33 +1,67 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { ActionForm, SubmitButton } from "@/components/ui/action-form";
+import { Badge, Empty, PageHeader } from "@/components/ui/basics";
 import { db } from "@/lib/db";
-import { markAllRead } from "@/app/actions/notifications";
+import { formatDateTime } from "@/lib/time";
+import { requireActor } from "@/server/auth";
+import { markAllReadAction, markReadAction } from "../actions/account";
+
+export const metadata = { title: "Notifications" };
+
+/** Only same-site relative links are followed. */
+const safeLink = (link: string) => (link.startsWith("/") && !link.startsWith("//") && !link.startsWith("/\\") ? link : null);
 
 export default async function NotificationsPage() {
-  const user = await requireUser();
-  const items = await db.notification.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 100 });
-  const unread = items.some((n) => !n.read);
+  const actor = await requireActor();
+  const items = await db.notification.findMany({
+    where: { userId: actor.userId },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    select: { id: true, message: true, link: true, read: true, createdAt: true },
+  });
+  const unread = items.filter((n) => !n.read).length;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="page-title">Notifications</h1>
-        {unread && (
-          <form action={markAllRead}><button className="btn-secondary py-1.5">Mark all as read</button></form>
-        )}
-      </div>
-      {items.length === 0 && <p className="card text-stone-600">Nothing yet. We&apos;ll let you know here (and by SMS) when something happens.</p>}
-      <ul className="space-y-2">
-        {items.map((n) => (
-          <li key={n.id}>
-            <Link href={n.link || "#"} className={`card flex gap-3 hover:border-brand-500 ${n.read ? "" : "border-brand-500 bg-brand-50"}`}>
-              {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-600" aria-label="Unread" />}
-              <span className="flex-1 text-sm">{n.message}</span>
-              <time className="shrink-0 text-xs text-stone-500">{n.createdAt.toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short" })}</time>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <PageHeader
+        title="Notifications"
+        subtitle={unread ? `${unread} unread` : "You're all caught up."}
+        actions={unread > 0 ? (
+          <ActionForm action={markAllReadAction} className="space-y-1" showSuccess={false}>
+            <SubmitButton className="btn-secondary min-h-11">Mark all as read</SubmitButton>
+          </ActionForm>
+        ) : undefined}
+      />
+      {items.length === 0 ? (
+        <Empty title="No notifications yet">Updates about your orders, visits and deliveries will appear here.</Empty>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((n) => {
+            const href = safeLink(n.link);
+            return (
+              <li key={n.id} className={`rounded-xl border p-3 ${n.read ? "border-stone-200 bg-white" : "border-brand-500 bg-brand-50"}`}>
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    {!n.read && <Badge tone="green">New</Badge>}
+                    {href ? (
+                      <Link href={href} className="block break-words text-sm font-medium text-stone-900 hover:underline">{n.message}</Link>
+                    ) : (
+                      <p className="break-words text-sm text-stone-900">{n.message}</p>
+                    )}
+                    <p className="text-xs text-stone-500">{formatDateTime(n.createdAt)}</p>
+                  </div>
+                  {!n.read && (
+                    <ActionForm action={markReadAction} className="shrink-0" showSuccess={false}>
+                      <input type="hidden" name="notificationId" value={n.id} />
+                      <SubmitButton className="btn-secondary min-h-10 px-3 text-xs" pendingText="…">Mark read</SubmitButton>
+                    </ActionForm>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

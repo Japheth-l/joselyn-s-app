@@ -1,88 +1,132 @@
-import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { BUSINESS_KINDS, ROLE_LABELS, VERIFICATION_LABELS, type Role } from "@/lib/constants";
-import { verifyAgent, verifyBusiness } from "@/app/actions/admin";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { PageHeader, Section } from "@/components/ui/basics";
+import { APPOINTMENT_STATUS, DELIVERY_STATUS, DISPUTE_STATUS, ORDER_STATUS, labelOf } from "@/lib/enums";
+import { formatMoney } from "@/lib/money";
+import { addDays, formatDate, parseLocalDate } from "@/lib/time";
+import { requireActor } from "@/server/auth";
+import { isAdmin } from "@/server/authz";
+import { adminQueues } from "@/server/queries/admin";
+import { report } from "@/server/services/admin";
+import { Stat } from "./_lib/ui";
 
-export default async function AdminPage() {
-  await requireUser("ADMIN");
-  const [businesses, agents, counts] = await Promise.all([
-    db.business.findMany({ include: { owner: true }, orderBy: [{ verificationStatus: "asc" }, { createdAt: "desc" }] }),
-    db.user.findMany({ where: { role: { in: ["MEASURER", "RIDER"] } }, orderBy: [{ verificationStatus: "asc" }, { createdAt: "desc" }] }),
-    db.order.groupBy({ by: ["status"], _count: true }),
-  ]);
-  const pendingFirst = <T extends { verificationStatus: string }>(xs: T[]) =>
-    [...xs].sort((a, b) => Number(b.verificationStatus === "PENDING") - Number(a.verificationStatus === "PENDING"));
+export const metadata = { title: "Overview" };
 
+const FALLBACK: [string, Parameters<typeof isAdmin>[1]][] = [
+  ["/admin/verifications", "VERIFY"], ["/admin/users", "USERS"], ["/admin/orders", "ORDERS"], ["/admin/disputes", "DISPUTES"],
+  ["/admin/finance", "FINANCE"], ["/admin/catalogue", "CATALOGUE"], ["/admin/settings", "CONFIG"],
+];
+
+const ymd = (d: Date) => d.toISOString().slice(0, 10);
+
+function Counts({ rows, labels }: { rows: Record<string, number>; labels: Record<string, string | { label: string }> }) {
+  const entries = Object.entries(rows).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return <p className="text-sm text-stone-500">None recorded in this period.</p>;
   return (
-    <div className="space-y-8">
-      <h1 className="page-title">Admin</h1>
-
-      <section className="flex flex-wrap gap-3">
-        {counts.map((c) => (
-          <div key={c.status} className="card px-4 py-3 text-sm">
-            <div className="text-2xl font-bold">{c._count}</div>
-            <div className="text-stone-500">{c.status.replaceAll("_", " ").toLowerCase()}</div>
-          </div>
-        ))}
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Businesses</h2>
-        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-stone-50 text-stone-500">
-              <tr><th className="p-3">Business</th><th className="p-3">Owner</th><th className="p-3">Registration</th><th className="p-3">Status</th><th className="p-3"></th></tr>
-            </thead>
-            <tbody>
-              {pendingFirst(businesses).map((b) => (
-                <tr key={b.id} className="border-t border-stone-100">
-                  <td className="p-3"><div className="font-medium">{b.name}</div><div className="text-stone-500">{BUSINESS_KINDS[b.kind as keyof typeof BUSINESS_KINDS]} · {b.address}, {b.city}</div></td>
-                  <td className="p-3">{b.owner.name}<div className="text-stone-500">{b.owner.phone}</div></td>
-                  <td className="p-3 font-mono">{b.registrationNumber}</td>
-                  <td className="p-3"><StatusPill status={b.verificationStatus} /></td>
-                  <td className="p-3"><Decide onVerify={verifyBusiness.bind(null, b.id, "VERIFIED")} onReject={verifyBusiness.bind(null, b.id, "REJECTED")} status={b.verificationStatus} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Measurement agents & riders</h2>
-        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-stone-50 text-stone-500">
-              <tr><th className="p-3">Name</th><th className="p-3">Role</th><th className="p-3">Ghana Card</th><th className="p-3">Status</th><th className="p-3"></th></tr>
-            </thead>
-            <tbody>
-              {pendingFirst(agents).map((a) => (
-                <tr key={a.id} className="border-t border-stone-100">
-                  <td className="p-3"><div className="font-medium">{a.name}</div><div className="text-stone-500">{a.phone} · {a.email}</div></td>
-                  <td className="p-3">{ROLE_LABELS[a.role as Role]}</td>
-                  <td className="p-3 font-mono">{a.ghanaCardNumber}</td>
-                  <td className="p-3"><StatusPill status={a.verificationStatus} /></td>
-                  <td className="p-3"><Decide onVerify={verifyAgent.bind(null, a.id, "VERIFIED")} onReject={verifyAgent.bind(null, a.id, "REJECTED")} status={a.verificationStatus} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+    <ul className="divide-y divide-stone-100 text-sm">
+      {entries.map(([k, v]) => (
+        <li key={k} className="flex justify-between gap-3 py-1.5"><span className="min-w-0 break-words">{labelOf(labels, k)}</span><span className="font-semibold tabular-nums">{v}</span></li>
+      ))}
+    </ul>
   );
 }
 
-function StatusPill({ status }: { status: string }) {
-  const color = status === "VERIFIED" ? "bg-brand-100 text-brand-700" : status === "REJECTED" ? "bg-red-100 text-red-700" : "bg-gold-100 text-gold-500";
-  return <span className={`badge ${color}`}>{VERIFICATION_LABELS[status]}</span>;
-}
+export default async function AdminOverview({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; demo?: string }> }) {
+  const actor = await requireActor();
+  if (!isAdmin(actor, "AUDIT")) {
+    const first = FALLBACK.find(([, p]) => isAdmin(actor, p));
+    if (first) redirect(first[0]);
+    notFound();
+  }
+  const sp = await searchParams;
+  const today = parseLocalDate(ymd(new Date()))!;
+  const toDay = (sp.to && parseLocalDate(sp.to)) || today;
+  const fromDay = (sp.from && parseLocalDate(sp.from)) || addDays(toDay, -29);
+  const includeDemo = sp.demo === "1";
+  const [r, q] = await Promise.all([report(actor, fromDay, addDays(toDay, 1), includeDemo), adminQueues()]);
+  const valid = fromDay <= toDay;
 
-function Decide({ onVerify, onReject, status }: { onVerify: () => Promise<void>; onReject: () => Promise<void>; status: string }) {
   return (
-    <div className="flex justify-end gap-2">
-      {status !== "VERIFIED" && <form action={onVerify}><button className="btn-primary py-1.5">Verify</button></form>}
-      {status !== "REJECTED" && <form action={onReject}><button className="btn-danger py-1.5">{status === "VERIFIED" ? "Suspend" : "Reject"}</button></form>}
+    <div className="space-y-6">
+      <PageHeader title="Overview" subtitle={<>Activity from <strong>{formatDate(fromDay)}</strong> to <strong>{formatDate(toDay)}</strong> (Accra time).</>} />
+
+      <form method="get" className="card grid gap-4 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end">
+        <div>
+          <label className="label" htmlFor="from">From</label>
+          <input id="from" name="from" type="date" defaultValue={ymd(fromDay)} className="input" />
+        </div>
+        <div>
+          <label className="label" htmlFor="to">To</label>
+          <input id="to" name="to" type="date" defaultValue={ymd(toDay)} className="input" />
+        </div>
+        <label className="flex min-h-10 items-center gap-2 text-sm">
+          <input type="checkbox" name="demo" value="1" defaultChecked={includeDemo} className="h-4 w-4" />
+          Include demo data
+        </label>
+        <button type="submit" className="btn-primary">Show</button>
+        <p className="text-xs text-stone-600 sm:col-span-4">
+          {includeDemo
+            ? "Demo (seeded example) records are INCLUDED in these figures."
+            : "Demo (seeded example) records are excluded unless you tick “Include demo data”."}
+        </p>
+      </form>
+
+      {!valid && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">The start date is after the end date, so nothing is counted.</p>}
+
+      <Section title="Needs attention now">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <Stat label="Verifications waiting" value={q.verifications} href={isAdmin(actor, "VERIFY") ? "/admin/verifications" : undefined} />
+          <Stat label="Open disputes" value={q.disputes} href={isAdmin(actor, "DISPUTES") ? "/admin/disputes" : undefined} />
+          <Stat label="Open support requests" value={q.tickets} href={isAdmin(actor, "DISPUTES") ? "/admin/support" : undefined} />
+          <Stat label="Refunds to send by MoMo" value={q.refundsProcessing} href={isAdmin(actor, "FINANCE") ? "/admin/finance" : undefined} />
+          <Stat label="Failed refunds" value={q.refundsFailed} href={isAdmin(actor, "FINANCE") ? "/admin/finance" : undefined} />
+          <Stat label="Styles to review" value={q.pendingStyles} href={isAdmin(actor, "CATALOGUE") ? "/admin/catalogue?status=PENDING" : undefined} />
+        </div>
+        <p className="text-xs text-stone-500">Queues are current totals (all dates, demo records included).</p>
+      </Section>
+
+      <Section title="Money">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Stat label={`Collected (${r.money.paymentCount} payments)`} value={formatMoney(r.money.collectedMinor)} />
+          <Stat label={`Refunded (${r.money.refundCount} refunds)`} value={formatMoney(r.money.refundedMinor)} />
+          <Stat label="Platform revenue" value={formatMoney(r.money.platformRevenueMinor)} />
+        </div>
+        <p className="text-xs text-stone-500">Collected counts payments confirmed by the provider in the period. Platform revenue is commission and service fees written to the ledger when orders were settled.</p>
+      </Section>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Section title="Orders">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Stat label="Created" value={r.orders.created} />
+            <Stat label="Completed" value={r.orders.completed} />
+            <Stat label="Median days to complete" value={r.orders.medianDaysToComplete == null ? "—" : r.orders.medianDaysToComplete.toFixed(1)} />
+          </div>
+          <h3 className="text-sm font-semibold text-stone-700">Orders created in the period, by current status</h3>
+          <Counts rows={r.orders.byStatus} labels={ORDER_STATUS} />
+        </Section>
+
+        <Section title="Disputes">
+          <Stat label="Opened" value={r.disputes.opened} />
+          <Counts rows={r.disputes.byStatus} labels={DISPUTE_STATUS} />
+        </Section>
+
+        <Section title="Deliveries">
+          <Counts rows={r.deliveries} labels={DELIVERY_STATUS} />
+        </Section>
+
+        <Section title="Measurement appointments">
+          <Counts rows={r.appointments} labels={APPOINTMENT_STATUS} />
+        </Section>
+
+        <Section title="Growth">
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="New users" value={r.growth.newUsers} />
+            <Stat label="New businesses" value={r.growth.newBusinesses} />
+          </div>
+        </Section>
+      </div>
+
+      <p className="text-sm text-stone-600">Every figure is computed from recorded data only. See the <Link href="/admin/audit" className="font-medium text-brand-700 hover:underline">audit log</Link> for who changed what.</p>
     </div>
   );
 }
